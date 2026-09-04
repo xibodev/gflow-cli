@@ -1,0 +1,29 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/gflow
+/flow
+
+# Output directories
+output/
+dist/
+
+# Local agent metadata
+.opencode/
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Go test cache and coverage
+*.out
+*.test

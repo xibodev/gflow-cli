@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Flow Bridge</title>
+  <style>
+    body {
+      width: 260px;
+      margin: 0;
+      padding: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #18181b;
+      color: #fafafa;
+    }
+    h2 {
+      font-size: 15px;
+      margin: 0 0 12px 0;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .badge {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: #3f3f46;
+      color: #a1a1aa;
+    }
+    .status-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px solid #27272a;
+      font-size: 13px;
+    }
+    .dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 6px;
+    }
+    .dot.green { background: #22c55e; }
+    .dot.red { background: #ef4444; }
+    button {
+      width: 100%;
+      margin-top: 14px;
+      padding: 8px 12px;
+      background: #2563eb;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    button:hover { background: #1d4ed8; }
+  </style>
+</head>
+<body>
+  <h2>Flow Bridge <span class="badge">Go</span></h2>
+  <div class="status-row">
+    <span>Agent Status:</span>
+    <span id="agent-status"><span class="dot red"></span>Disconnected</span>
+  </div>
+  <div class="status-row">
+    <span>Google Flow Token:</span>
+    <span id="token-status"><span class="dot red"></span>Missing</span>
+  </div>
+  <button id="open-flow-btn">Open Google Flow</button>
+  <script src="popup.js"></script>
+</body>
+</html>

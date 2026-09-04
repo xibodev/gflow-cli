@@ -1,0 +1,70 @@
+version: 2
+
+project_name: gflow
+
+builds:
+  - id: gflow
+    main: ./cmd/gflow
+    binary: gflow
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+archives:
+  - id: default
+    format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - LICENSE
+
+brews:
+  - name: gflow
+    repository:
+      owner: xibodev
+      name: gflow-cli
+      branch: main
+      token: "{{ .Env.GH_PAT }}"
+    directory: Formula
+    homepage: "https://github.com/xibodev/gflow-cli"
+    description: "Lean CLI for Google Flow (Imagen 4 & Veo 3.1)"
+    license: "MIT"
+
+scoops:
+  - name: gflow
+    repository:
+      owner: xibodev
+      name: gflow-cli
+      branch: main
+      token: "{{ .Env.GH_PAT }}"
+    directory: bucket
+    homepage: "https://github.com/xibodev/gflow-cli"
+    description: "Lean CLI for Google Flow (Imagen 4 & Veo 3.1)"
+    license: "MIT"
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"

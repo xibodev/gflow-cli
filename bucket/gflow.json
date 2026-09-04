@@ -1,0 +1,22 @@
+{
+    "version": "1.0.0",
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/xibodev/gflow-cli/releases/download/v1.0.0/gflow_1.0.0_windows_amd64.zip",
+            "bin": [
+                "gflow.exe"
+            ],
+            "hash": "9913d0bf60fcf8fc1deac24fab44c9e4702db97f70b4ed71245146081f48940c"
+        },
+        "arm64": {
+            "url": "https://github.com/xibodev/gflow-cli/releases/download/v1.0.0/gflow_1.0.0_windows_arm64.zip",
+            "bin": [
+                "gflow.exe"
+            ],
+            "hash": "29ba737165aacbe9067ee0efa9ddca812a0d6305b8633826a5af3c4719f4a2f4"
+        }
+    },
+    "homepage": "https://github.com/xibodev/gflow-cli",
+    "license": "MIT",
+    "description": "Lean CLI for Google Flow (Imagen 4 \u0026 Veo 3.1)"
+}

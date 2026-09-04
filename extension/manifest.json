@@ -1,0 +1,58 @@
+{
+  "manifest_version": 3,
+  "name": "Flow Bridge (Go)",
+  "version": "1.0.0",
+  "description": "Bridge between Google Flow and local Go CLI/API agent.",
+  "permissions": [
+    "webRequest",
+    "storage",
+    "alarms",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://aisandbox-pa.googleapis.com/*",
+    "https://labs.google/*",
+    "https://*.labs.google/*",
+    "https://flow.google.com/*",
+    "https://*.flow.google.com/*",
+    "https://flow.google/*",
+    "https://*.flow.google/*",
+    "http://127.0.0.1:*/*",
+    "http://localhost:*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://labs.google/fx/tools/flow*",
+        "https://labs.google/fx/*/tools/flow*",
+        "https://flow.google.com/*",
+        "https://*.flow.google.com/*",
+        "https://flow.google/*",
+        "https://*.flow.google/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["injected.js"],
+      "matches": [
+        "https://labs.google/*",
+        "https://*.labs.google/*",
+        "https://flow.google.com/*",
+        "https://*.flow.google.com/*",
+        "https://flow.google/*",
+        "https://*.flow.google/*"
+      ]
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Flow Bridge Status"
+  }
+}
