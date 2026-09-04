@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en" class="dark scroll-smooth">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>gflow — Single-Binary CLI for Google Flow (Imagen 4 & Veo 3.1)</title>
+  <meta name="description" content="Lean, single-binary Go CLI, OpenAI-compatible API, and MCP server for Google Flow image and video generation.">
+
+  <!-- Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            obsidian: '#090d16',
+            surface: '#0f172a',
+            surfaceCard: '#152033',
+            borderSubtle: '#223048',
+            brand: '#6366f1',
+            brandGlow: '#4f46e5',
+            skyGlow: '#38bdf8',
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    body {
+      background-color: #090d16;
+      color: #f1f5f9;
+      background-image: 
+        radial-gradient(circle at 50% -10%, rgba(99, 102, 241, 0.15), transparent 45%),
+        radial-gradient(circle at 90% 20%, rgba(56, 189, 248, 0.08), transparent 35%);
+    }
+    .glass {
+      background: rgba(17, 24, 39, 0.7);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(36, 50, 74, 0.8);
+    }
+    .glass-card {
+      background: rgba(21, 32, 51, 0.6);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(36, 50, 74, 0.6);
+      transition: all 0.2s ease;
+    }
+    .glass-card:hover {
+      border-color: rgba(99, 102, 241, 0.6);
+      transform: translateY(-2px);
+    }
+    pre, code {
+      font-family: 'JetBrains Mono', monospace;
+    }
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #090d16;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #223048;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #38bdf8;
+    }
+  </style>
+</head>
+<body class="min-h-screen font-sans flex flex-col selection:bg-brand selection:text-white">
+
+  <!-- ─── Header / Navigation ─── -->
+  <header class="sticky top-0 z-50 glass border-b border-borderSubtle/60 px-6 py-3.5">
+    <div class="max-w-6xl mx-auto flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <span class="text-xl font-bold bg-gradient-to-r from-white via-slate-200 to-indigo-300 bg-clip-text text-transparent flex items-center gap-2">
+          <span class="text-brand">⚡</span> gflow
+        </span>
+        <span class="text-[11px] font-mono px-2 py-0.5 rounded-full bg-brand/10 border border-brand/30 text-indigo-300">v1.0.0</span>
+        <span class="flex items-center gap-1.5 text-[11px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+          Ready
+        </span>
+      </div>
+
+      <nav class="hidden md:flex items-center gap-6 text-sm font-medium text-slate-300">
+        <a href="#features" class="hover:text-white transition-colors">Features</a>
+        <a href="#installation" class="hover:text-white transition-colors">Install</a>
+        <a href="#cli" class="hover:text-white transition-colors">CLI Reference</a>
+        <a href="#mcp" class="hover:text-white transition-colors">MCP Protocol</a>
+        <a href="#api" class="hover:text-white transition-colors">OpenAI API</a>
+      </nav>
+
+      <div class="flex items-center gap-3">
+        <a href="https://github.com/xibodev/gflow-cli" target="_blank" rel="noopener noreferrer" 
+           class="flex items-center gap-2 px-3 py-1.5 text-xs font-mono rounded-lg bg-surfaceCard border border-borderSubtle hover:border-slate-400 text-slate-200 transition-all">
+          <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+          GitHub
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- ─── Hero Section ─── -->
+  <main class="flex-1">
+    <section class="max-w-6xl mx-auto px-6 pt-16 pb-14 text-center">
+      <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 text-xs font-mono mb-6">
+        <span>✨ Imagen 4 & Veo 3.1 inside your Terminal</span>
+      </div>
+      
+      <h1 class="text-4xl sm:text-6xl font-extrabold tracking-tight text-white mb-6 max-w-4xl mx-auto leading-tight">
+        Google Flow for <span class="bg-gradient-to-r from-indigo-400 via-sky-300 to-indigo-200 bg-clip-text text-transparent">Engineers & AI Agents</span>
+      </h1>
+
+      <p class="text-lg text-slate-400 max-w-2xl mx-auto mb-10 leading-relaxed font-normal">
+        Single-binary Go CLI, OpenAI-compatible HTTP API, and Model Context Protocol (MCP) server. Generate images, cinematic videos, and 4K upsamples directly from your workflow.
+      </p>
+
+      <!-- ─── Interactive Install Tabs ─── -->
+      <div class="max-w-2xl mx-auto mb-16 text-left" id="installation">
+        <div class="glass rounded-xl overflow-hidden shadow-2xl border border-borderSubtle">
+          <div class="flex items-center justify-between bg-surfaceCard/90 border-b border-borderSubtle px-4 py-2.5">
+            <div class="flex items-center gap-1.5">
+              <span class="w-3 h-3 rounded-full bg-rose-500/80"></span>
+              <span class="w-3 h-3 rounded-full bg-amber-500/80"></span>
+              <span class="w-3 h-3 rounded-full bg-emerald-500/80"></span>
+              <span class="ml-2 text-xs font-mono text-slate-400">quick install</span>
+            </div>
+            <div class="flex items-center gap-1 text-xs font-mono">
+              <button onclick="switchTab('scoop')" id="tab-scoop" class="px-2.5 py-1 rounded bg-brand text-white font-medium">Scoop</button>
+              <button onclick="switchTab('brew')" id="tab-brew" class="px-2.5 py-1 rounded text-slate-400 hover:text-white">Homebrew</button>
+              <button onclick="switchTab('ps1')" id="tab-ps1" class="px-2.5 py-1 rounded text-slate-400 hover:text-white">PowerShell</button>
+              <button onclick="switchTab('bash')" id="tab-bash" class="px-2.5 py-1 rounded text-slate-400 hover:text-white">Bash</button>
+              <button onclick="switchTab('go')" id="tab-go" class="px-2.5 py-1 rounded text-slate-400 hover:text-white">Go</button>
+            </div>
+          </div>
+
+          <div class="p-4 bg-obsidian/90 flex items-center justify-between font-mono text-sm">
+            <span id="install-cmd" class="text-sky-300 overflow-x-auto whitespace-nowrap mr-4">scoop bucket add xibodev https://github.com/xibodev/gflow-cli && scoop install gflow</span>
+            <button onclick="copyCommand()" id="copy-btn" class="shrink-0 p-1.5 rounded-md hover:bg-surfaceCard text-slate-400 hover:text-white border border-borderSubtle transition-all" title="Copy to clipboard">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── Interactive Terminal Demo ─── -->
+      <div class="max-w-4xl mx-auto text-left mb-20">
+        <div class="glass rounded-xl overflow-hidden shadow-2xl border border-borderSubtle">
+          <div class="bg-surfaceCard px-4 py-3 border-b border-borderSubtle flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-mono text-slate-400 flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-emerald-400"></span> terminal — gflow
+              </span>
+            </div>
+            <span class="text-xs font-mono text-slate-500">Google Flow Engine</span>
+          </div>
+
+          <div class="p-6 bg-obsidian/95 font-mono text-xs sm:text-sm leading-relaxed space-y-4">
+            <div>
+              <span class="text-indigo-400 font-semibold">$</span> <span class="text-white">gflow video "a futuristic dragon soaring through neon clouds" -d 4 -a landscape</span>
+            </div>
+            <div class="text-slate-400 space-y-1">
+              <div>Submitting video generation: "a futuristic dragon soaring..." [landscape, 4s]...</div>
+              <div class="text-indigo-300">✔ Job submitted! Media ID: e214a5d2-0bf5-459a-a41f-62c8f5806856</div>
+              <div class="text-slate-400">Rendering video.... <span class="text-emerald-400 font-semibold">Done! (40s)</span></div>
+              <div class="text-emerald-400">✔ Saved: ./output/video_20260904_122104_e214a5d2.mp4</div>
+            </div>
+
+            <div class="pt-3 border-t border-borderSubtle/60">
+              <span class="text-indigo-400 font-semibold">$</span> <span class="text-white">gflow history</span>
+            </div>
+            <div class="text-slate-400 font-mono text-xs overflow-x-auto">
+              <div class="text-slate-500">TIME         TYPE   ID            PROMPT                                LOCAL PATH</div>
+              <div class="text-slate-500">----         ----   --            ------                                ----------</div>
+              <div><span class="text-slate-400">09/04 12:21</span>  <span class="text-sky-400">video</span>  <span class="text-indigo-300">e214a5d2-0bf</span>  a futuristic dragon soaring throu...  ./output/video_e214a5d2.mp4</div>
+              <div><span class="text-slate-400">09/04 12:19</span>  <span class="text-emerald-400">image</span>  <span class="text-indigo-300">img_121952_1</span>  a small golden retriever puppy si...  ./output/image_img_121952.png</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─── Core Features ─── -->
+    <section class="max-w-6xl mx-auto px-6 py-16" id="features">
+      <div class="text-center max-w-2xl mx-auto mb-14">
+        <h2 class="text-3xl font-bold text-white mb-3">Engineered for Frictionless AI Generation</h2>
+        <p class="text-slate-400 text-sm">Everything you need to orchestrate Google Flow programmatically.</p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <!-- Feature 1 -->
+        <div class="glass-card rounded-xl p-6 flex flex-col justify-between">
+          <div>
+            <div class="w-10 h-10 rounded-lg bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center text-indigo-400 mb-4 text-lg">🖼️</div>
+            <h3 class="text-base font-semibold text-white mb-2">Imagen 4 / Nano Banana 2</h3>
+            <p class="text-xs text-slate-400 leading-relaxed">
+              Standard (narwhal), Lite (harbor_seal), and Pro (gem_pix_2) models. Full support for reference images and custom aspect ratios.
+            </p>
+          </div>
+          <div class="mt-4 pt-3 border-t border-borderSubtle text-[11px] font-mono text-indigo-300">gflow image "..."</div>
+        </div>
+
+        <!-- Feature 2 -->
+        <div class="glass-card rounded-xl p-6 flex flex-col justify-between">
+          <div>
+            <div class="w-10 h-10 rounded-lg bg-sky-500/10 border border-sky-500/30 flex items-center justify-center text-sky-400 mb-4 text-lg">🎬</div>
+            <h3 class="text-base font-semibold text-white mb-2">Veo 3.1 Cinematic Video</h3>
+            <p class="text-xs text-slate-400 leading-relaxed">
+              Generate 4s, 6s, 8s, or 10s videos. Supports starting frames, end frame transitions, and 1080p/4K upsampling.
+            </p>
+          </div>
+          <div class="mt-4 pt-3 border-t border-borderSubtle text-[11px] font-mono text-sky-300">gflow video "..." -r 1080p</div>
+        </div>
+
+        <!-- Feature 3 -->
+        <div class="glass-card rounded-xl p-6 flex flex-col justify-between">
+          <div>
+            <div class="w-10 h-10 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 mb-4 text-lg">🛡️</div>
+            <h3 class="text-base font-semibold text-white mb-2">Genuine reCAPTCHA 1.0</h3>
+            <p class="text-xs text-slate-400 leading-relaxed">
+              Uses an embedded Chrome MV3 extension bridge that taps into your authentic browser session for 1.0 human trust score. Zero 403 blocks.
+            </p>
+          </div>
+          <div class="mt-4 pt-3 border-t border-borderSubtle text-[11px] font-mono text-emerald-400">gflow setup</div>
+        </div>
+
+        <!-- Feature 4 -->
+        <div class="glass-card rounded-xl p-6 flex flex-col justify-between">
+          <div>
+            <div class="w-10 h-10 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 mb-4 text-lg">🤖</div>
+            <h3 class="text-base font-semibold text-white mb-2">Native MCP v2 & OpenAI API</h3>
+            <p class="text-xs text-slate-400 leading-relaxed">
+              Plug directly into Claude Desktop, Cursor, OpenCode, and Cline over stdio, or call standard /v1/images/generations HTTP endpoints.
+            </p>
+          </div>
+          <div class="mt-4 pt-3 border-t border-borderSubtle text-[11px] font-mono text-amber-300">gflow mcp / gflow serve</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─── CLI Reference ─── -->
+    <section class="max-w-6xl mx-auto px-6 py-16" id="cli">
+      <div class="text-center max-w-2xl mx-auto mb-12">
+        <h2 class="text-3xl font-bold text-white mb-3">CLI Command Reference</h2>
+        <p class="text-slate-400 text-sm">Rich, composable subcommands designed for scripts, pipelines, and interactive terminals.</p>
+      </div>
+
+      <div class="glass rounded-xl border border-borderSubtle overflow-hidden">
+        <div class="flex overflow-x-auto border-b border-borderSubtle bg-surfaceCard/90 text-xs font-mono">
+          <button onclick="showDoc('doc-image')" id="tab-doc-image" class="px-5 py-3 border-b-2 border-brand text-white font-medium bg-surfaceCard">gflow image</button>
+          <button onclick="showDoc('doc-video')" id="tab-doc-video" class="px-5 py-3 border-b-2 border-transparent text-slate-400 hover:text-white">gflow video</button>
+          <button onclick="showDoc('doc-upsample')" id="tab-doc-upsample" class="px-5 py-3 border-b-2 border-transparent text-slate-400 hover:text-white">gflow upsample</button>
+          <button onclick="showDoc('doc-history')" id="tab-doc-history" class="px-5 py-3 border-b-2 border-transparent text-slate-400 hover:text-white">gflow history</button>
+          <button onclick="showDoc('doc-setup')" id="tab-doc-setup" class="px-5 py-3 border-b-2 border-transparent text-slate-400 hover:text-white">gflow setup</button>
+        </div>
+
+        <!-- Doc Image -->
+        <div id="doc-image" class="p-6 bg-obsidian/95 space-y-4">
+          <div class="text-xs font-mono text-indigo-300">Usage: gflow image &lt;prompt&gt; [flags]</div>
+          <p class="text-sm text-slate-300">Generates high-resolution images via Imagen 4 (Nano Banana 2). Never overwrites existing generations.</p>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-mono pt-2">
+            <div class="p-3 rounded-lg bg-surfaceCard/60 border border-borderSubtle">
+              <span class="text-sky-300">-a, --aspect</span>: landscape (16:9), square (1:1), portrait (9:16), 4:3, 3:4
+            </div>
+            <div class="p-3 rounded-lg bg-surfaceCard/60 border border-borderSubtle">
+              <span class="text-sky-300">-c, --count</span>: Number of image variations (1–4)
+            </div>
+            <div class="p-3 rounded-lg bg-surfaceCard/60 border border-borderSubtle">
+              <span class="text-sky-300">-m, --model</span>: narwhal (default), harbor_seal (lite), gem_pix_2 (pro)
+            </div>
+            <div class="p-3 rounded-lg bg-surfaceCard/60 border border-borderSubtle">
+              <span class="text-sky-300">-o, --output</span>: Output file path or directory (default: ./output)
+            </div>
+            <div class="p-3 rounded-lg bg-surfaceCard/60 border border-borderSubtle">
+              <span class="text-sky-300">--ref</span>: Reference image path or remote media ID
+            </div>
+            <div class="p-3 rounded-lg bg-surfaceCard/60 border border-borderSubtle">
+              <span class="text-sky-300">--json</span>: Output machine-readable JSON array of assets
+            </div>
+          </div>
+        </div>
+
+        <!-- Doc Video -->
+        <div id="doc-video" class="p-6 bg-obsidian/95 space-y-4 hidden">
+          <div class="text-xs font-mono text-indigo-300">Usage: gflow video &lt;prompt&gt; [flags]</div>
+          <p class="text-sm text-slate-300">Generates cinematic videos via Veo 3.1 with async background polling.</p>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-mono pt-2">
+            <div class="p-3 rounded-lg bg-surfaceCard/60 border border-borderSubtle">
+              <span class="text-sky-300">-d, --duration</span>: 4, 6, 8, or 10 seconds (default: 10)
+            </div>
+            <div class="p-3 rounded-lg bg-surfaceCard/60 border border-borderSubtle">
+              <span class="text-sky-300">-r, --resolution</span>: 720p (native), 1080p, 4k (upsampled pass)
+            </div>
+            <div class="p-3 rounded-lg bg-surfaceCard/60 border border-borderSubtle">
+              <span class="text-sky-300">--start</span>: Start frame image path or media ID
+            </div>
+            <div class="p-3 rounded-lg bg-surfaceCard/60 border border-borderSubtle">
+              <span class="text-sky-300">--end</span>: End frame image path or media ID (smooth interpolation)
+            </div>
+          </div>
+        </div>
+
+        <!-- Doc Upsample -->
+        <div id="doc-upsample" class="p-6 bg-obsidian/95 space-y-4 hidden">
+          <div class="text-xs font-mono text-indigo-300">Usage: gflow upsample &lt;media_id&gt; [flags]</div>
+          <p class="text-sm text-slate-300">Runs Google Flow's secondary upsampler pass over an existing 720p video clip.</p>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-mono pt-2">
+            <div class="p-3 rounded-lg bg-surfaceCard/60 border border-borderSubtle">
+              <span class="text-sky-300">-r, --resolution</span>: 1080p (free pass) or 4k
+            </div>
+            <div class="p-3 rounded-lg bg-surfaceCard/60 border border-borderSubtle">
+              <span class="text-sky-300">-o, --output</span>: Output file path for upsampled clip
+            </div>
+          </div>
+        </div>
+
+        <!-- Doc History -->
+        <div id="doc-history" class="p-6 bg-obsidian/95 space-y-4 hidden">
+          <div class="text-xs font-mono text-indigo-300">Usage: gflow history [flags]</div>
+          <p class="text-sm text-slate-300">Inspects your local generation registry saved in ~/.gflow/history.json.</p>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-mono pt-2">
+            <div class="p-3 rounded-lg bg-surfaceCard/60 border border-borderSubtle">
+              <span class="text-sky-300">-l, --limit</span>: Number of recent generations to show (default: 20)
+            </div>
+            <div class="p-3 rounded-lg bg-surfaceCard/60 border border-borderSubtle">
+              <span class="text-sky-300">--json</span>: Output history as structured JSON
+            </div>
+          </div>
+        </div>
+
+        <!-- Doc Setup -->
+        <div id="doc-setup" class="p-6 bg-obsidian/95 space-y-4 hidden">
+          <div class="text-xs font-mono text-indigo-300">Usage: gflow setup</div>
+          <p class="text-sm text-slate-300">One-time setup command. Extracts the embedded Chrome extension to ~/.gflow/extension and launches Google Flow in your browser.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─── MCP Section ─── -->
+    <section class="max-w-6xl mx-auto px-6 py-16" id="mcp">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+        <div class="lg:col-span-5 space-y-4">
+          <div class="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-brand/10 border border-brand/30 text-indigo-300 text-xs font-mono">
+            <span>Model Context Protocol v2</span>
+          </div>
+          <h2 class="text-3xl font-bold text-white">Give Your AI Agents Eyes and Motion</h2>
+          <p class="text-sm text-slate-400 leading-relaxed">
+            Attach <code class="text-indigo-300 bg-surfaceCard px-1.5 py-0.5 rounded">gflow mcp</code> to Claude Desktop, Cursor, OpenCode, Cline, or Windsurf. Agents can generate reference images, storyboard videos, and check generation status using native tool calls.
+          </p>
+          <div class="space-y-2 text-xs text-slate-300 font-mono">
+            <div class="flex items-center gap-2">
+              <span class="text-emerald-400 font-bold">✔</span> generate_flow_image
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="text-emerald-400 font-bold">✔</span> generate_flow_video
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="text-emerald-400 font-bold">✔</span> upsample_flow_video
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="text-emerald-400 font-bold">✔</span> get_flow_status & history
+            </div>
+          </div>
+        </div>
+
+        <div class="lg:col-span-7">
+          <div class="glass rounded-xl border border-borderSubtle overflow-hidden">
+            <div class="bg-surfaceCard px-4 py-2.5 border-b border-borderSubtle flex items-center justify-between text-xs font-mono text-slate-400">
+              <span>claude_desktop_config.json / mcp.json</span>
+              <button onclick="copyMcpConfig()" class="text-slate-400 hover:text-white" title="Copy JSON">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+              </button>
+            </div>
+            <pre class="p-4 bg-obsidian text-xs font-mono text-slate-200 overflow-x-auto"><code id="mcp-json">{
+  "mcpServers": {
+    "gflow": {
+      "command": "gflow",
+      "args": ["mcp"]
+    }
+  }
+}</code></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─── OpenAI API Section ─── -->
+    <section class="max-w-6xl mx-auto px-6 py-16" id="api">
+      <div class="glass-card rounded-2xl p-8 border border-borderSubtle">
+        <div class="max-w-3xl">
+          <div class="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-mono mb-3">
+            <span>REST API Drop-In</span>
+          </div>
+          <h2 class="text-2xl sm:text-3xl font-bold text-white mb-3">OpenAI-Compatible HTTP Server</h2>
+          <p class="text-sm text-slate-400 mb-6">
+            Start the background bridge server with <code class="text-indigo-300 font-mono bg-surfaceCard px-1.5 py-0.5 rounded">gflow serve --port 8001</code>. Existing tools that talk to <code class="text-sky-300 font-mono">/v1/images/generations</code> work without modification.
+          </p>
+
+          <pre class="p-4 rounded-xl bg-obsidian border border-borderSubtle text-xs font-mono text-slate-200 overflow-x-auto"><code>curl http://127.0.0.1:8001/v1/images/generations \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "futuristic neon Tokyo street",
+    "n": 1,
+    "size": "1024x1024"
+  }'</code></pre>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ─── Footer ─── -->
+  <footer class="border-t border-borderSubtle/60 py-8 px-6 text-center text-xs font-mono text-slate-500">
+    <div class="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div>
+        <span>gflow-cli</span> • Released under the <a href="https://opensource.org/licenses/MIT" target="_blank" class="text-slate-400 hover:underline">MIT License</a>.
+      </div>
+      <div class="flex items-center gap-6">
+        <a href="https://github.com/xibodev/gflow-cli" target="_blank" class="hover:text-slate-300">GitHub</a>
+        <a href="https://labs.google/fx/tools/flow" target="_blank" class="hover:text-slate-300">Google Flow</a>
+        <a href="https://github.com/xibodev" target="_blank" class="hover:text-slate-300">xibodev</a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- ─── Interactive JS ─── -->
+  <script>
+    const tabCommands = {
+      scoop: 'scoop bucket add xibodev https://github.com/xibodev/gflow-cli && scoop install gflow',
+      brew: 'brew tap xibodev/gflow-cli https://github.com/xibodev/gflow-cli && brew install gflow',
+      ps1: 'irm https://raw.githubusercontent.com/xibodev/gflow-cli/main/scripts/install.ps1 | iex',
+      bash: 'curl -fsSL https://raw.githubusercontent.com/xibodev/gflow-cli/main/scripts/install.sh | bash',
+      go: 'go install github.com/xibodev/gflow-cli/cmd/gflow@latest'
+    };
+
+    function switchTab(name) {
+      document.getElementById('install-cmd').innerText = tabCommands[name];
+      ['scoop', 'brew', 'ps1', 'bash', 'go'].forEach(t => {
+        const btn = document.getElementById('tab-' + t);
+        if (t === name) {
+          btn.className = 'px-2.5 py-1 rounded bg-brand text-white font-medium';
+        } else {
+          btn.className = 'px-2.5 py-1 rounded text-slate-400 hover:text-white';
+        }
+      });
+    }
+
+    function copyCommand() {
+      const text = document.getElementById('install-cmd').innerText;
+      navigator.clipboard.writeText(text);
+      const btn = document.getElementById('copy-btn');
+      btn.innerHTML = '<svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>';
+      setTimeout(() => {
+        btn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>';
+      }, 2000);
+    }
+
+    function copyMcpConfig() {
+      const text = document.getElementById('mcp-json').innerText;
+      navigator.clipboard.writeText(text);
+      alert('MCP configuration copied to clipboard!');
+    }
+
+    function showDoc(id) {
+      ['doc-image', 'doc-video', 'doc-upsample', 'doc-history', 'doc-setup'].forEach(d => {
+        const el = document.getElementById(d);
+        const tab = document.getElementById('tab-' + d);
+        if (d === id) {
+          el.classList.remove('hidden');
+          tab.className = 'px-5 py-3 border-b-2 border-brand text-white font-medium bg-surfaceCard';
+        } else {
+          el.classList.add('hidden');
+          tab.className = 'px-5 py-3 border-b-2 border-transparent text-slate-400 hover:text-white';
+        }
+      });
+    }
+  </script>
+</body>
+</html>
