@@ -1,18 +1,29 @@
 package config
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
+	"sync"
 )
 
 // Default configuration constants for Google Flow APIs.
+//
+// APIBase, APIKey, RecaptchaSiteKey, ToolName, OriginURL, FlowURL and
+// LabsAPIBase are public upstream client identifiers/endpoint addresses,
+// not user secrets. Local daemon credentials are never embedded here; see
+// LoadAuth.
 const (
 	APIBase          = "https://aisandbox-pa.googleapis.com"
 	APIKey           = "AIzaSyBtrm0o5ab1c-Ec8ZuLcGt3oJAA5VWt3pY"
 	RecaptchaSiteKey = "6LdsFiUsAAAAAIjVDZcuLhaHiDn5nnHVXVRQGeMV"
 	ToolName         = "PINHOLE"
-	DefaultProjectID = "0143adf4-5864-4cb4-abb5-fe4254ad0dc7"
 	OriginURL        = "https://labs.google"
 	FlowURL          = "https://labs.google/fx/tools/flow"
 	LabsAPIBase      = "https://labs.google/fx/api"
@@ -36,9 +47,9 @@ const (
 
 // Image model identifiers
 const (
-	ImageModelDefault    = "NARWHAL"    // Imagen 4 / Nano Banana 2
-	ImageModelLite       = "HARBOR_SEAL"// Nano Banana 2 Lite
-	ImageModelPro        = "GEM_PIX_2"  // Nano Banana Pro
+	ImageModelDefault = "NARWHAL"     // Imagen 4 / Nano Banana 2
+	ImageModelLite    = "HARBOR_SEAL" // Nano Banana 2 Lite
+	ImageModelPro     = "GEM_PIX_2"   // Nano Banana Pro
 )
 
 // Video model identifiers
@@ -83,18 +94,102 @@ var VideoAspectMap = map[string]string{
 	"9:16":      "VIDEO_ASPECT_RATIO_PORTRAIT",
 }
 
+// OpenAI size to named aspect mapping for compatibility.
+var openAISizeAspect = map[string]string{
+	"1024x1024": "square",
+	"512x512":   "square",
+	"1024x1792": "portrait",
+	"1792x1024": "landscape",
+}
+
 // Config represents runtime configuration
 type Config struct {
-	Host             string
-	Port             int
-	OutputDir        string
-	ProjectID        string
+	Host              string
+	Port              int
+	OutputDir         string
+	ProjectID         string
 	DefaultImageModel string
-	CDPPort          int
-	Debug            bool
+	CDPPort           int
+	Debug             bool
+	APIToken          string
+	BridgeToken       string
+}
+
+// ResolveImageAspect maps an explicit aspect or OpenAI size to a named aspect.
+// Explicit aspect takes precedence. Unknown values return an error instead of
+// silently falling back to landscape.
+func ResolveImageAspect(aspect, size string) (string, error) {
+	if strings.TrimSpace(aspect) != "" {
+		a := strings.ToLower(strings.TrimSpace(aspect))
+		if _, ok := ImageAspectMap[a]; ok {
+			return a, nil
+		}
+		return "", fmt.Errorf("unknown image aspect %q", aspect)
+	}
+	s := strings.TrimSpace(size)
+	if s == "" {
+		return "landscape", nil
+	}
+	if a, ok := openAISizeAspect[s]; ok {
+		return a, nil
+	}
+	if strings.Contains(s, "9:16") {
+		return "portrait", nil
+	}
+	// Accept named aspects passed as size for backward compatibility.
+	low := strings.ToLower(s)
+	if _, ok := ImageAspectMap[low]; ok {
+		return low, nil
+	}
+	return "", fmt.Errorf("unknown image size/aspect %q", size)
+}
+
+// ResolveVideoAspect validates a named video aspect.
+func ResolveVideoAspect(aspect string) (string, error) {
+	if strings.TrimSpace(aspect) == "" {
+		return "landscape", nil
+	}
+	a := strings.ToLower(strings.TrimSpace(aspect))
+	if _, ok := VideoAspectMap[a]; ok {
+		return a, nil
+	}
+	return "", fmt.Errorf("unknown video aspect %q", aspect)
+}
+
+// ValidateBindHost rejects non-loopback bind hosts for the local-only design.
+func ValidateBindHost(host string) error {
+	h := strings.ToLower(strings.TrimSpace(host))
+	switch h {
+	case "127.0.0.1", "localhost", "::1":
+		return nil
+	default:
+		if ip := net.ParseIP(h); ip != nil && ip.IsLoopback() {
+			return nil
+		}
+		return fmt.Errorf("unsupported bind host %q: gflow is a local-only daemon; use 127.0.0.1", host)
+	}
+}
+
+// ValidatePort checks the TCP port range.
+func ValidatePort(port int) error {
+	if port < 1 || port > 65535 {
+		return fmt.Errorf("invalid port %d: must be in [1,65535]", port)
+	}
+	return nil
+}
+
+// RequireProjectID returns an actionable error when generation is attempted
+// without a configured Google Flow project. Status/setup must work without it.
+func (c *Config) RequireProjectID() (string, error) {
+	if strings.TrimSpace(c.ProjectID) == "" {
+		return "", fmt.Errorf("Google Flow project is not configured: set DEFAULT_PROJECT (or FLOW_PROJECT_ID) to your Flow project ID, then retry generation")
+	}
+	return c.ProjectID, nil
 }
 
 // LoadConfig loads configuration from environment variables with defaults.
+// Generation project comes only from DEFAULT_PROJECT/FLOW_PROJECT_ID; there is
+// no tracked default. Local daemon tokens are loaded via LoadAuth.
 func LoadConfig() *Config {
 	host := getEnv("FLOW_HOST", "127.0.0.1")
 	portStr := getEnv("FLOW_PORT", "8001")
@@ -119,15 +214,107 @@ func LoadConfig() *Config {
 		cdpPort = 9222
 	}
 
-	return &Config{
+	cfg := &Config{
 		Host:              host,
 		Port:              port,
 		OutputDir:         outDir,
-		ProjectID:         getEnv("DEFAULT_PROJECT", DefaultProjectID),
+		ProjectID:         firstNonEmpty(getEnv("DEFAULT_PROJECT", ""), getEnv("FLOW_PROJECT_ID", "")),
 		DefaultImageModel: getEnv("IMAGE_MODEL", ImageModelDefault),
 		CDPPort:           cdpPort,
 		Debug:             os.Getenv("FLOW_DEBUG") == "true" || os.Getenv("FLOW_DEBUG") == "1",
 	}
+	// Explicit env overrides for automation/tests; otherwise persisted file.
+	cfg.APIToken = os.Getenv("FLOW_API_TOKEN")
+	cfg.BridgeToken = os.Getenv("FLOW_BRIDGE_TOKEN")
+	if cfg.APIToken == "" || cfg.BridgeToken == "" {
+		if auth, err := LoadAuth(); err == nil {
+			if cfg.APIToken == "" {
+				cfg.APIToken = auth.APIToken
+			}
+			if cfg.BridgeToken == "" {
+				cfg.BridgeToken = auth.BridgeToken
+			}
+		}
+	}
+	return cfg
+}
+
+// Auth holds persistent local daemon credentials. These authenticate local
+// CLI/MCP callers (APIToken) and the browser extension (BridgeToken).
+// They are not Google credentials and are never embedded in the binary.
+type Auth struct {
+	APIToken    string `json:"api_token"`
+	BridgeToken string `json:"bridge_token"`
+}
+
+var authMu sync.Mutex
+
+func authPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".gflow", "auth.json"), nil
+}
+
+// LoadAuth loads or creates persistent local credentials. Concurrent
+// daemon/CLI startup uses exclusive file creation so tokens stay stable and
+// are never overwritten on each start. File is created owner-only where the
+// platform supports it (0600 on Unix; on Windows the file lives in the
+// user's profile, which is ACL-private by default).
+func LoadAuth() (*Auth, error) {
+	authMu.Lock()
+	defer authMu.Unlock()
+
+	path, err := authPath()
+	if err != nil {
+		return nil, err
+	}
+	if data, err := os.ReadFile(path); err == nil {
+		var a Auth
+		if err := json.Unmarshal(data, &a); err == nil && a.APIToken != "" && a.BridgeToken != "" {
+			return &a, nil
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return nil, err
+	}
+	a := &Auth{APIToken: newToken(32), BridgeToken: newToken(32)}
+	data, _ := json.MarshalIndent(a, "", "  ")
+	// O_EXCL: if another process won the race, read its file instead.
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		if data, rerr := os.ReadFile(path); rerr == nil {
+			var existing Auth
+			if jerr := json.Unmarshal(data, &existing); jerr == nil && existing.APIToken != "" {
+				return &existing, nil
+			}
+		}
+		return nil, err
+	}
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	if err := f.Close(); err != nil {
+		return nil, err
+	}
+	return a, nil
+}
+
+// AuthPathForTest overrides HOME-dependent lookup in tests via GFLOW_HOME.
+func AuthPathForTest() string {
+	if h := os.Getenv("GFLOW_HOME"); h != "" {
+		return filepath.Join(h, ".gflow", "auth.json")
+	}
+	p, _ := authPath()
+	return p
+}
+
+func newToken(n int) string {
+	b := make([]byte, n)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
 }
 
 func getEnv(key, defaultVal string) string {
@@ -136,4 +323,13 @@ func getEnv(key, defaultVal string) string {
 		return defaultVal
 	}
 	return val
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
 }

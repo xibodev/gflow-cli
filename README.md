@@ -1,6 +1,6 @@
 # gflow-cli ⚡
 
-[![Go Version](https://img.shields.io/badge/Go-1.23+-00ADD8?style=flat&logo=go)](https://go.dev)
+[![Go Version](https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat&logo=go)](https://go.dev)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Google Flow](https://img.shields.io/badge/Google_Flow-Imagen_4_&_Veo_3.1-4285F4?logo=google)](https://labs.google/fx/tools/flow)
 [![MCP v2](https://img.shields.io/badge/MCP_v2-Supported-7057ff)](https://modelcontextprotocol.io)
@@ -38,11 +38,6 @@ brew tap xibodev/gflow-cli https://github.com/xibodev/gflow-cli
 brew install gflow
 ```
 
-### Chocolatey (Windows)
-```powershell
-choco install gflow
-```
-
 ### GitHub CLI (Fastest for Team Members)
 Since you are already logged in via `gh`:
 ```powershell
@@ -75,11 +70,19 @@ go install github.com/xibodev/gflow-cli/cmd/gflow@latest
 ```bash
 gflow setup
 ```
-This extracts the bundled extension to `~/.gflow/extension` and opens Chrome:
+This extracts the bundled extension to `~/.gflow/extension`, writes its local
+endpoint configuration, and opens Chrome:
 1. Open `chrome://extensions` in Chrome.
 2. Toggle on **Developer mode** (top-right).
 3. Click **Load unpacked** and select the printed directory (`~/.gflow/extension`).
 4. Ensure you are signed in on [Google Flow](https://labs.google/fx/tools/flow).
+5. Set your Flow project for generation (status/setup work without it):
+   `DEFAULT_PROJECT=<your-flow-project-id>`.
+
+Setup generates persistent local credentials (`~/.gflow/auth.json`) for the
+CLI/MCP client and the extension. If you change host/port (`FLOW_HOST` /
+`FLOW_PORT` or `gflow serve --host/--port`), re-run `gflow setup` and click
+**Reload** on the unpacked extension so it picks up the new endpoints.
 
 ### 2. Verify Connection
 ```bash
@@ -152,8 +155,11 @@ gflow video "scene change from day to night" --start day.png --end night.png
 ### Upsample Existing Video
 ```bash
 # Upsample a finished 720p video to 1080p or 4K
-gflow upsample 0143adf4-5864-4cb4-abb5-fe4254ad0dc7 -r 4k -o 4k_clip.mp4
+gflow upsample <MEDIA_ID> -r 4k -o 4k_clip.mp4
 ```
+Video generation always renders native 720p first; `1080p`/`4k` are delivered
+via this separate upsample step. If upsampling fails, the original native
+video ID is reported so you can retry without regenerating.
 
 ---
 
@@ -200,11 +206,14 @@ Add to your MCP settings:
 }
 ```
 
-**Available MCP Tools**:
-- `generate_flow_image`: Text & reference image generation.
-- `generate_flow_video`: Text, start/end frame video generation with upsampling.
+**Available MCP Tools** (served over stdio by `gflow mcp`, backed by the same
+local daemon as the CLI):
+- `generate_flow_image`: Prompt, aspect, model, count, `reference_image`
+  (file path or media ID), and `seed`.
+- `generate_flow_video`: Prompt, duration, aspect, `resolution` (720p native;
+  1080p/4k trigger the upsample step), `start_image`/`end_image`, `seed`.
 - `upsample_flow_video`: Upsample video to 1080p/4K.
-- `get_flow_status`: Check connection and token readiness.
+- `get_flow_status`: Check daemon, extension, and token readiness.
 - `get_flow_history`: Retrieve recent generation records.
 
 ---
@@ -216,38 +225,62 @@ Start the server:
 gflow serve --port 8001
 ```
 
+The daemon requires a local API token on all `/v1/*` routes. `gflow setup`
+writes it to `~/.gflow/auth.json`; pass it as a Bearer token (placeholder
+below — never commit real tokens):
+
 ### Generate Images (`POST /v1/images/generations`)
 ```bash
 curl http://127.0.0.1:8001/v1/images/generations \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $GFLOW_API_TOKEN" \
   -d '{
     "prompt": "a cybernetic tiger in a futuristic forest",
     "n": 1,
-    "size": "1024x1024"
+    "aspect": "square",
+    "reference_media_ids": [],
+    "seed": 42
   }'
 ```
+(`size` accepts OpenAI dimensions like `1024x1024`; explicit `aspect` wins.
+`response_format` is `url` (default) or `b64_json`. Uploads use multipart
+`POST /v1/upload` with a `file` field — server-side file paths are rejected.)
 
 ### Submit Video (`POST /v1/videos/generations`)
 ```bash
 curl http://127.0.0.1:8001/v1/videos/generations \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $GFLOW_API_TOKEN" \
   -d '{
     "prompt": "ocean waves crashing against rocky cliffs",
     "duration": 6,
     "aspect": "landscape"
   }'
 ```
+Submit native resolution only; request `1080p`/`4k` via
+`POST /v1/videos/upsample` after the job succeeds. Polling
+`GET /v1/videos/generations/<job_id>` returns `processing`, `succeeded`
+(with assets), or `failed` (with a structured error) — failures are never
+reported as `processing`.
 
 ---
 
 ## How It Works
 
-Google Flow secures all generative APIs with **reCAPTCHA Enterprise v3**. Headless browsers and fresh automation profiles get assigned low trust scores (<0.3), causing Google to return `403 Forbidden`.
+Google Flow secures generative APIs with **reCAPTCHA Enterprise v3**.
+Headless browsers and fresh automation profiles often score poorly, causing
+Google to return `403 Forbidden`.
 
-`gflow` solves this with an elegant two-tier architecture:
-1. **Lightweight Extension Bridge**: Runs inside your everyday, logged-in browser session on `labs.google/fx/tools/flow`.
-2. **Authentic reCAPTCHA Execution**: When a generation command is issued, `gflow` requests a reCAPTCHA token inside the live Flow page context, ensuring a **1.0 trust score**.
-3. **Pure Go Execution**: 100% of the API communication, job polling, media streaming, and file management is handled natively in Go.
+`gflow` uses a two-tier architecture:
+1. **Lightweight Extension Bridge**: Runs inside your everyday, logged-in
+   browser session on `labs.google/fx/tools/flow`.
+2. **Authentic reCAPTCHA Execution**: When a generation command is issued,
+   the extension requests a reCAPTCHA token inside the live Flow page
+   context. (No specific trust score is guaranteed; upstream behavior may change.)
+3. **Go Daemon + Browser Fetch**: Go builds request payloads, coordinates
+   polling, and manages files; the actual upstream API calls execute as
+   `fetch()` in the logged-in browser session, which supplies the Google
+   session and CAPTCHA token.
 
 ---
 
