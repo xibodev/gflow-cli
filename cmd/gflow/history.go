@@ -3,11 +3,11 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"text/tabwriter"
 	"os"
+	"text/tabwriter"
 
-	"github.com/xibodev/gflow-cli/pkg/history"
 	"github.com/spf13/cobra"
+	"github.com/xibodev/gflow-cli/pkg/history"
 )
 
 var historyLimit int

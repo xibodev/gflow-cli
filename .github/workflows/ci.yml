@@ -18,13 +18,73 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version-file: go.mod
           cache: true
+
+      - name: Format check
+        run: gofmt -l .
 
       - name: Run Tests
         run: |
-          go test -v ./...
+          go test ./...
+
+      - name: Vet
+        run: |
+          go vet ./...
 
       - name: Build Verification
         run: |
-          go build -v ./cmd/gflow
+          go build ./...
+
+  race:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Race tests (CGO-capable Linux)
+        run: |
+          go test -race ./...
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Windows filesystem/history tests
+        run: |
+          go test ./pkg/util/ ./pkg/history/ ./pkg/embedded/ ./pkg/bridge/
+
+  cross-compile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Cross-compile release targets
+        run: |
+          GOOS=linux GOARCH=amd64 go build ./cmd/gflow
+          GOOS=linux GOARCH=arm64 go build ./cmd/gflow
+          GOOS=darwin GOARCH=amd64 go build ./cmd/gflow
+          GOOS=darwin GOARCH=arm64 go build ./cmd/gflow
+          GOOS=windows GOARCH=amd64 go build ./cmd/gflow
+          GOOS=windows GOARCH=arm64 go build ./cmd/gflow

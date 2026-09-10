@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
 REPO="xibodev/gflow-cli"
 INSTALL_DIR="$HOME/.gflow/bin"
 
-echo "⚡ Installing gflow-cli for $(uname -s)..."
+echo "Installing gflow-cli for $(uname -s)..."
 
 mkdir -p "$INSTALL_DIR"
 
@@ -14,23 +14,58 @@ ARCH="$(uname -m)"
 case "$ARCH" in
   x86_64) ARCH="amd64" ;;
   aarch64|arm64) ARCH="arm64" ;;
-  *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
+  *) echo "Unsupported architecture: $ARCH (supported: x86_64/amd64, aarch64/arm64)" >&2; exit 1 ;;
 esac
 
-RELEASE_URL="https://api.github.com/repos/$REPO/releases/latest"
-DOWNLOAD_URL=$(curl -s "$RELEASE_URL" | grep "browser_download_url" | grep "$OS" | grep "$ARCH" | cut -d '"' -f 4 | head -n 1)
+case "$OS" in
+  linux|darwin) ;;
+  *) echo "Unsupported OS: $OS (supported: linux, darwin; Windows uses install.ps1)" >&2; exit 1 ;;
+esac
 
-if [ -n "$DOWNLOAD_URL" ]; then
-  echo "Downloading from $DOWNLOAD_URL..."
-  TMP_TAR="/tmp/gflow.tar.gz"
-  curl -fsSL "$DOWNLOAD_URL" -o "$TMP_TAR"
-  tar -xzf "$TMP_TAR" -C "$INSTALL_DIR"
-  rm -f "$TMP_TAR"
-  chmod +x "$INSTALL_DIR/gflow"
-else
-  echo "Prebuilt binary not found. Falling back to go install..."
-  go install "github.com/$REPO/cmd/gflow@latest"
+TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/gflow-install.XXXXXX")"
+cleanup() { rm -rf "$TMP_DIR"; }
+trap cleanup EXIT
+
+use_gh=false
+if command -v gh >/dev/null 2>&1; then
+  use_gh=true
 fi
+
+# Authenticated gh is preferred for private releases; fall back to curl.
+if [ "$use_gh" = true ]; then
+  ASSET_PATTERN="*${OS}_${ARCH}.tar.gz"
+  if ! gh release download -R "$REPO" --pattern "$ASSET_PATTERN" -D "$TMP_DIR"; then
+    echo "No prebuilt release asset found via gh. Falling back to go install..." >&2
+    GOBIN="$INSTALL_DIR" go install "github.com/$REPO/cmd/gflow@latest"
+    exit 0
+  fi
+  ARCHIVE="$(ls "$TMP_DIR"/*"${OS}_${ARCH}".tar.gz 2>/dev/null | head -n 1)"
+else
+  RELEASE_URL="https://api.github.com/repos/$REPO/releases/latest"
+  DOWNLOAD_URL=$(curl -fsSL "$RELEASE_URL" | grep "browser_download_url" | grep "$OS" | grep "$ARCH" | cut -d '"' -f 4 | head -n 1)
+  if [ -z "${DOWNLOAD_URL:-}" ]; then
+    echo "Prebuilt binary not found. Falling back to go install..." >&2
+    GOBIN="$INSTALL_DIR" go install "github.com/$REPO/cmd/gflow@latest"
+    exit 0
+  fi
+  ARCHIVE="$TMP_DIR/gflow.tar.gz"
+  echo "Downloading from $DOWNLOAD_URL..."
+  curl -fsSL "$DOWNLOAD_URL" -o "$ARCHIVE"
+fi
+
+# Verify checksum when the release publishes checksums.txt alongside the asset.
+if [ "$use_gh" = true ]; then
+  if gh release download -R "$REPO" --pattern "checksums.txt" -D "$TMP_DIR" 2>/dev/null; then
+    (cd "$TMP_DIR" && sha256sum -c --status --ignore-missing checksums.txt) || {
+      echo "Checksum verification failed; aborting." >&2
+      exit 1
+    }
+    echo "Checksum verified."
+  fi
+fi
+
+tar -xzf "$ARCHIVE" -C "$INSTALL_DIR"
+chmod +x "$INSTALL_DIR/gflow"
 
 # Add to PATH hint
 if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
@@ -40,5 +75,5 @@ if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
 fi
 
 echo ""
-echo "✔ gflow installed successfully!"
+echo "gflow installed successfully!"
 echo "Run 'gflow setup' to get started."
