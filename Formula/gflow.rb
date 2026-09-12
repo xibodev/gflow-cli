@@ -5,21 +5,21 @@
 class Gflow < Formula
   desc "Lean CLI for Google Flow (Imagen 4 & Veo 3.1)"
   homepage "https://github.com/xibodev/gflow-cli"
-  version "1.0.0"
+  version "1.1.0"
   license "MIT"
 
   on_macos do
     if Hardware::CPU.intel?
-      url "https://github.com/xibodev/gflow-cli/releases/download/v1.0.0/gflow_1.0.0_darwin_amd64.tar.gz"
-      sha256 "8001770352a040785924a9c6b1146d838a52ea3cf294043af11d35ba184f3273"
+      url "https://github.com/xibodev/gflow-cli/releases/download/v1.1.0/gflow_1.1.0_darwin_amd64.tar.gz"
+      sha256 "a64061a31d129ff7d7394b41d33088f4c5493ca6a5b7bd5a61ba607983b46185"
 
       define_method(:install) do
         bin.install "gflow"
       end
     end
     if Hardware::CPU.arm?
-      url "https://github.com/xibodev/gflow-cli/releases/download/v1.0.0/gflow_1.0.0_darwin_arm64.tar.gz"
-      sha256 "e553a870f2648b472c08c6dea88bc1faec42da1a762a3b3d2db133298cac1f6d"
+      url "https://github.com/xibodev/gflow-cli/releases/download/v1.1.0/gflow_1.1.0_darwin_arm64.tar.gz"
+      sha256 "3298fc5862ef3a0167f2915265c53a43b1c451345eb7c0e407e9b7ce5a36003d"
 
       define_method(:install) do
         bin.install "gflow"
@@ -29,15 +29,15 @@ class Gflow < Formula
 
   on_linux do
     if Hardware::CPU.intel? && Hardware::CPU.is_64_bit?
-      url "https://github.com/xibodev/gflow-cli/releases/download/v1.0.0/gflow_1.0.0_linux_amd64.tar.gz"
-      sha256 "c4289ccc12d924063736bc6e73ad6e344a3ac1fc5817825d45b07ee7d4195f17"
+      url "https://github.com/xibodev/gflow-cli/releases/download/v1.1.0/gflow_1.1.0_linux_amd64.tar.gz"
+      sha256 "7820bb56bb158a5774c9e93ecb222005db2687e5cf82bfdc7f332547990ca35e"
       define_method(:install) do
         bin.install "gflow"
       end
     end
     if Hardware::CPU.arm? && Hardware::CPU.is_64_bit?
-      url "https://github.com/xibodev/gflow-cli/releases/download/v1.0.0/gflow_1.0.0_linux_arm64.tar.gz"
-      sha256 "8d60f266966edc67eb1405788372c21144463a8b30fb68005e832a2d41e2d788"
+      url "https://github.com/xibodev/gflow-cli/releases/download/v1.1.0/gflow_1.1.0_linux_arm64.tar.gz"
+      sha256 "1cdf589a37cefddf38c398cdbbb139b95cec20db42c1baa2189dae782ce06aa4"
       define_method(:install) do
         bin.install "gflow"
       end
