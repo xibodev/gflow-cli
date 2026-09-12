@@ -34,19 +34,37 @@ type VideoMediaState struct {
 	Reason string
 }
 
+// RequestExecutor abstracts the communication channel to Google Flow.
+// It can be satisfied by *bridge.ExtensionBridge (daemon/extension mode)
+// or *cdp.FlowBridge (extension-free CDP mode).
+type RequestExecutor interface {
+	ExecuteAPIRequest(ctx context.Context, urlPath string, body any, captchaAction string, method string, headers map[string]string) (*models.ExtensionCallback, error)
+	RequestMediaURL(ctx context.Context, mediaID string) (string, error)
+}
+
 // FlowClient is the high-level client for Google Flow operations.
 type FlowClient struct {
-	cfg    *config.Config
-	bridge *bridge.ExtensionBridge
+	cfg      *config.Config
+	executor RequestExecutor
+	bridge   *bridge.ExtensionBridge
 }
 
 // NewFlowClient creates a new FlowClient with configuration and bridge.
 func NewFlowClient(cfg *config.Config, b *bridge.ExtensionBridge) *FlowClient {
-	return &FlowClient{cfg: cfg, bridge: b}
+	return &FlowClient{cfg: cfg, executor: b, bridge: b}
 }
 
-// Bridge returns the underlying ExtensionBridge.
+// NewFlowClientWithExecutor creates a FlowClient with any RequestExecutor (e.g. extension-free CDP).
+func NewFlowClientWithExecutor(cfg *config.Config, exec RequestExecutor) *FlowClient {
+	b, _ := exec.(*bridge.ExtensionBridge)
+	return &FlowClient{cfg: cfg, executor: exec, bridge: b}
+}
+
+// Bridge returns the underlying ExtensionBridge if present.
 func (c *FlowClient) Bridge() *bridge.ExtensionBridge { return c.bridge }
+
+// Executor returns the underlying RequestExecutor.
+func (c *FlowClient) Executor() RequestExecutor { return c.executor }
 
 // Config returns the configuration.
 func (c *FlowClient) Config() *config.Config { return c.cfg }
@@ -166,7 +184,7 @@ func (c *FlowClient) GenerateImages(
 	endpoint := fmt.Sprintf("%s%s?key=%s", config.APIBase, fmt.Sprintf(config.EndpointBatchGenerateImages, c.cfg.ProjectID), config.APIKey)
 
 	log.Printf("[Client] Generating %d image(s) [%s, %s]", count, aspectVal, targetModel)
-	resp, err := c.bridge.ExecuteAPIRequest(ctx, endpoint, batchReq, "IMAGE_GENERATION", "POST", nil)
+	resp, err := c.executor.ExecuteAPIRequest(ctx, endpoint, batchReq, "IMAGE_GENERATION", "POST", nil)
 	if err != nil {
 		return nil, fmt.Errorf("generate images error: %w", err)
 	}
@@ -273,7 +291,7 @@ func (c *FlowClient) GenerateVideo(
 	}
 
 	log.Printf("[Client] Submitting video job [%s, %ds, %s]", aspectVal, duration, modelKey)
-	resp, err := c.bridge.ExecuteAPIRequest(ctx, endpoint, payload, "VIDEO_GENERATION", "POST", nil)
+	resp, err := c.executor.ExecuteAPIRequest(ctx, endpoint, payload, "VIDEO_GENERATION", "POST", nil)
 	if err != nil {
 		return nil, fmt.Errorf("submit video error: %w", err)
 	}
@@ -319,7 +337,7 @@ func (c *FlowClient) CheckVideoStatus(ctx context.Context, mediaIDs []string) ([
 	for i, id := range mediaIDs {
 		checkReq.Media[i] = models.VideoStatusCheckItem{Name: id, ProjectID: c.cfg.ProjectID}
 	}
-	resp, err := c.bridge.ExecuteAPIRequest(ctx, pollEndpoint, checkReq, "", "POST", nil)
+	resp, err := c.executor.ExecuteAPIRequest(ctx, pollEndpoint, checkReq, "", "POST", nil)
 	if err != nil {
 		return nil, fmt.Errorf("%w: status check transport: %v", models.ErrUpstream, err)
 	}
@@ -418,13 +436,13 @@ func (c *FlowClient) WaitForVideo(ctx context.Context, mediaIDs []string, timeou
 			var assets []models.Asset
 			for _, id := range completed {
 				videoURL := ""
-				u, err := c.bridge.RequestMediaURL(ctx, id)
+				u, err := c.executor.RequestMediaURL(ctx, id)
 				if err == nil && u != "" {
 					videoURL = u
 				}
 				if videoURL == "" {
 					detailEndpoint := fmt.Sprintf("%s%s?key=%s", config.APIBase, fmt.Sprintf(config.EndpointGetFlowMedia, id), config.APIKey)
-					detailResp, err := c.bridge.ExecuteAPIRequest(ctx, detailEndpoint, nil, "", "GET", nil)
+					detailResp, err := c.executor.ExecuteAPIRequest(ctx, detailEndpoint, nil, "", "GET", nil)
 					if err == nil && detailResp.Status == 200 {
 						detailBytes, _ := json.Marshal(detailResp.Data)
 						var detail models.FlowMediaResponse
@@ -466,13 +484,13 @@ func (c *FlowClient) ResolveVideoAssets(ctx context.Context, mediaIDs []string) 
 	var assets []models.Asset
 	for _, id := range mediaIDs {
 		videoURL := ""
-		u, err := c.bridge.RequestMediaURL(ctx, id)
+		u, err := c.executor.RequestMediaURL(ctx, id)
 		if err == nil && u != "" {
 			videoURL = u
 		}
 		if videoURL == "" {
 			detailEndpoint := fmt.Sprintf("%s%s?key=%s", config.APIBase, fmt.Sprintf(config.EndpointGetFlowMedia, id), config.APIKey)
-			detailResp, err := c.bridge.ExecuteAPIRequest(ctx, detailEndpoint, nil, "", "GET", nil)
+			detailResp, err := c.executor.ExecuteAPIRequest(ctx, detailEndpoint, nil, "", "GET", nil)
 			if err == nil && detailResp.Status == 200 {
 				detailBytes, _ := json.Marshal(detailResp.Data)
 				var detail models.FlowMediaResponse
@@ -537,7 +555,7 @@ func (c *FlowClient) UpsampleVideo(
 		ClientContext:          clientCtx,
 		Requests:               []models.VideoRequestItem{reqItem},
 	}
-	resp, err := c.bridge.ExecuteAPIRequest(ctx, endpoint, payload, "VIDEO_GENERATION", "POST", nil)
+	resp, err := c.executor.ExecuteAPIRequest(ctx, endpoint, payload, "VIDEO_GENERATION", "POST", nil)
 	if err != nil {
 		return nil, fmt.Errorf("upsample error: %w", err)
 	}
@@ -577,7 +595,7 @@ func (c *FlowClient) UploadImageBytes(ctx context.Context, data []byte, filename
 	req.ClientContext.ProjectID = c.cfg.ProjectID
 	req.ImageBytes = base64.StdEncoding.EncodeToString(data)
 	endpoint := fmt.Sprintf("%s%s?key=%s", config.APIBase, config.EndpointUploadImage, config.APIKey)
-	resp, err := c.bridge.ExecuteAPIRequest(ctx, endpoint, req, "", "POST", nil)
+	resp, err := c.executor.ExecuteAPIRequest(ctx, endpoint, req, "", "POST", nil)
 	if err != nil {
 		return "", fmt.Errorf("upload image error: %w", err)
 	}
@@ -632,7 +650,7 @@ func readBounded(path string, max int64) ([]byte, error) {
 // GetCredits retrieves remaining credits from /v1/credits.
 func (c *FlowClient) GetCredits(ctx context.Context) (any, error) {
 	endpoint := fmt.Sprintf("%s%s?key=%s", config.APIBase, config.EndpointCredits, config.APIKey)
-	resp, err := c.bridge.ExecuteAPIRequest(ctx, endpoint, nil, "", "GET", nil)
+	resp, err := c.executor.ExecuteAPIRequest(ctx, endpoint, nil, "", "GET", nil)
 	if err != nil {
 		return nil, err
 	}

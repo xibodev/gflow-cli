@@ -5,14 +5,15 @@
 [![Google Flow](https://img.shields.io/badge/Google_Flow-Imagen_4_&_Veo_3.1-4285F4?logo=google)](https://labs.google/fx/tools/flow)
 [![MCP v2](https://img.shields.io/badge/MCP_v2-Supported-7057ff)](https://modelcontextprotocol.io)
 
-**gflow** is a single-binary CLI, OpenAI-compatible API, and Model Context Protocol (MCP) server for **Google Flow** image and video generation.
+**gflow** is a single-binary CLI, OpenAI-compatible API, and Model Context Protocol (MCP) server for multi-provider AI media generation.
 
-- 🖼️ **Image Generation** via **Imagen 4 / Nano Banana 2** (`NARWHAL`, `HARBOR_SEAL`, `GEM_PIX_2`).
-- 🎬 **Video Generation** via **Veo 3.1** (`abra_t2v` 4s, 6s, 8s, 10s, and `fast_ultra`).
-- 🔍 **Video Upsampling** (720p native to 1080p and 4K).
-- 🧩 **Zero-Friction Setup**: Chrome extension is embedded inside the Go binary (`gflow setup`).
+- 🖼️ **Extension-Free Image Generation** via **Gemini Imagen 3** or **Flow Imagen 4**.
+- 🎬 **Extension-Free Video Generation** via **Gemini Veo**, **MiniMax H3**, or **Google Flow**.
+- 🎵 **Music & Audio Generation** via **Gemini Lyria (MusicFX)** (`gflow audio`).
+- 💬 **Instant Terminal Chat** with **Gemini Flash** (`gflow chat`).
+- ⚡ **Zero-Extension Mode**: Direct HTTPS requests using captured desktop session tokens with zero browser extensions required.
 - 🤖 **Native MCP Server** for Claude Desktop, Cursor, OpenCode, Cline, and Windsurf.
-- ⚡ **Zero External Runtimes**: Pure native Go binary. No Python, no virtualenvs, no Node, no Selenium.
+- 🚀 **Multi-Provider Architecture**: Switch seamlessly between `gemini` (default), `minimax`, and `flow` via `--provider` or `GFLOW_PROVIDER`.
 
 ---
 
@@ -89,56 +90,63 @@ CLI/MCP client and the extension. If you change host/port (`FLOW_HOST` /
 gflow status
 ```
 ```text
-Server:             Running on http://127.0.0.1:8001
-Extension Status:   ✔ Connected
-Google Flow Token:  ✔ Captured / Ready
-Active Workers:     1
-Overall Health:     healthy
+=== AI Providers Status ===
+
+[Gemini] (Default — Extension-Free: Imagen 3, Veo, Audio, Chat)
+  App Installed:    ✔ Found
+  Session State:    ✔ Ready
+
+[MiniMax Design] (Direct Cloud — H3 Video)
+  Session State:    ✔ Ready
+
+[Google Flow] (Legacy / Daemon)
+  Daemon Running:   ✖ Stopped
 ```
+
+---
+
+## Provider Selection
+
+Select your backend via `--provider` (`-P`) or `export GFLOW_PROVIDER=gemini`:
+- `gemini` (**default**): Pure HTTPS, zero extensions, zero background servers. Powered by Gemini Desktop session. Generates Imagen 3 images, Veo video, Lyria audio, and terminal chat.
+- `minimax`: Direct cloud generation to MiniMax H3. Captured from local MiniMax Design app.
+- `flow`: Original Google Flow backend (Imagen 4 + Veo 3.1) via local daemon and bridge.
 
 ---
 
 ## CLI Usage
 
-### Generate Images (Imagen 4 / Nano Banana 2)
+### 1. Terminal Chat (Gemini)
 ```bash
-# Generate landscape image
-gflow image "a cyberpunk robot drinking coffee in Tokyo at night"
-
-# Square aspect ratio with Nano Banana Pro
-gflow image "minimalist origami eagle logo" -a square -m pro
-
-# Generate 4 variations
-gflow image "ancient floating library among clouds" -c 4 -o ./my_images/
-
-# Image-to-image style transfer using reference
-gflow image "restyle as an oil painting" --ref portrait.png
+# Instant conversational response
+gflow chat "What is the airspeed velocity of an unladen swallow?"
 ```
 
-**Options**:
-- `-a, --aspect`: `landscape` (16:9), `square` (1:1), `portrait` (9:16), `4:3`, `3:4`
-- `-c, --count`: Number of variations (1–4)
-- `-m, --model`: `narwhal` (standard), `harbor_seal` (lite), `gem_pix_2` (pro)
-- `-o, --output`: Output file or directory
-- `--ref`: Reference image path or media ID
-- `--seed`: Reproducible seed integer
-- `--json`: Machine-readable JSON output
-
----
-
-### Generate Videos (Veo 3.1)
+### 2. Audio & Music Generation (Gemini Lyria)
 ```bash
-# 10s landscape video
-gflow video "a dragon soaring over snowy mountain peaks" -d 10 -a landscape
+# Generate a music track
+gflow audio "upbeat acoustic guitar melody with gentle drums"
+```
 
-# 4s video delivered at 1080p
-gflow video "neon flower blooming in slow motion" -d 4 -r 1080p -o flower.mp4
+### 3. Generate Images (Imagen 3 / Imagen 4)
+```bash
+# Generate image via Gemini (default, extension-free)
+gflow image "a golden origami butterfly on black velvet"
 
-# Video starting from an image
-gflow video "the car accelerates into the sunset" --start car.png
+# Generate image via Google Flow
+gflow image "cyberpunk robot in Tokyo at night" --provider flow -a square -m pro
+```
 
-# Video transitioning between first and last frame
-gflow video "scene change from day to night" --start day.png --end night.png
+### 4. Generate Videos (Veo / MiniMax H3)
+```bash
+# Generate video via Gemini Veo (default)
+gflow video "ocean waves crashing against stormy cliffs"
+
+# Generate video via MiniMax H3
+gflow video "a dragon soaring over snowy mountain peaks" --provider minimax -d 4
+
+# Generate video via Google Flow
+gflow video "neon flower blooming in slow motion" --provider flow -d 4 -r 1080p
 ```
 
 **Options**:

@@ -12,22 +12,26 @@ var (
 	commit  = "none"
 	date    = "unknown"
 
-	jsonOutput bool
+	jsonOutput   bool
+	providerFlag string
 )
 
 var rootCmd = &cobra.Command{
 	Use:   "gflow",
-	Short: "gflow — Lean CLI and API for Google Flow (Imagen 4 & Veo 3.1)",
-	Long: `gflow is a single-binary CLI and server for Google Flow image and video generation.
-Powered by Imagen 4 (Nano Banana 2) and Veo 3.1. Zero external Python/Node dependencies.`,
+	Short: "gflow — Lean multi-provider CLI for AI images, video, and audio",
+	Long: `gflow is a single-binary CLI and server for AI image, video, and audio generation.
+Supports extension-free Gemini (Imagen 3 & Veo), MiniMax Design (H3), and Google Flow.`,
 	Version: fmt.Sprintf("%s (commit: %s, built: %s)", version, commit, date),
 }
 
 func init() {
 	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Output results in JSON format")
+	rootCmd.PersistentFlags().StringVarP(&providerFlag, "provider", "P", "", "Provider backend: gemini (default), minimax, flow")
 
 	rootCmd.AddCommand(imageCmd)
 	rootCmd.AddCommand(videoCmd)
+	rootCmd.AddCommand(audioCmd)
+	rootCmd.AddCommand(chatCmd)
 	rootCmd.AddCommand(upsampleCmd)
 	rootCmd.AddCommand(uploadCmd)
 	rootCmd.AddCommand(historyCmd)
@@ -35,6 +39,16 @@ func init() {
 	rootCmd.AddCommand(setupCmd)
 	rootCmd.AddCommand(serveCmd)
 	rootCmd.AddCommand(mcpCmd)
+}
+
+func getProvider() string {
+	if providerFlag != "" {
+		return providerFlag
+	}
+	if p := os.Getenv("GFLOW_PROVIDER"); p != "" {
+		return p
+	}
+	return "gemini"
 }
 
 func Execute() {

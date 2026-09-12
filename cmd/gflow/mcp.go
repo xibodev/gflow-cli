@@ -15,6 +15,14 @@ var mcpCmd = &cobra.Command{
 The MCP server is a client of the local gflow daemon; it never owns extension sessions directly.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg := config.LoadConfig()
+		prov := getProvider()
+
+		if prov == "gemini" {
+			srv := mcp.NewServerGemini(cfg)
+			return srv.Run()
+		}
+
+		// Flow / daemon mode:
 		// Stdout must carry only JSON-RPC; EnsureRunning is silent on success.
 		if err := daemon.EnsureRunningWithAuth(cfg.Host, cfg.Port, cfg.APIToken); err != nil {
 			return err

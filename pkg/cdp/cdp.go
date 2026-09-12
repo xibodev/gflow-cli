@@ -14,13 +14,26 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// Target represents a Chrome target from /json/list.
+// Target represents a Chrome/Chromium/Electron target from /json/list.
 type Target struct {
 	ID                   string `json:"id"`
 	Title                string `json:"title"`
 	Type                 string `json:"type"`
 	URL                  string `json:"url"`
 	WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
+}
+
+// Cookie represents a cookie returned by Network.getCookies.
+type Cookie struct {
+	Name     string  `json:"name"`
+	Value    string  `json:"value"`
+	Domain   string  `json:"domain"`
+	Path     string  `json:"path"`
+	Expires  float64 `json:"expires"`
+	Size     int     `json:"size"`
+	HTTPOnly bool    `json:"httpOnly"`
+	Secure   bool    `json:"secure"`
+	Session  bool    `json:"session"`
 }
 
 // Client is a lightweight pure Go CDP client.
@@ -31,13 +44,13 @@ type Client struct {
 	closed chan struct{}
 }
 
-// FindFlowTarget finds an existing Google Flow page or any usable page on port.
-func FindFlowTarget(port int) (*Target, error) {
+// FindTargetByPattern finds a target matching urlPattern on port.
+func FindTargetByPattern(port int, urlPattern string) (*Target, error) {
 	url := fmt.Sprintf("http://127.0.0.1:%d/json/list", port)
 	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Get(url)
 	if err != nil {
-		return nil, fmt.Errorf("could not connect to Chrome on port %d: %w", port, err)
+		return nil, fmt.Errorf("could not connect to CDP on port %d: %w", port, err)
 	}
 	defer resp.Body.Close()
 
@@ -50,7 +63,7 @@ func FindFlowTarget(port int) (*Target, error) {
 	for i := range targets {
 		t := &targets[i]
 		if t.Type == "page" {
-			if strings.Contains(t.URL, "labs.google/fx/tools/flow") {
+			if urlPattern != "" && strings.Contains(t.URL, urlPattern) {
 				return t, nil
 			}
 			if fallback == nil && t.WebSocketDebuggerURL != "" {
@@ -58,11 +71,20 @@ func FindFlowTarget(port int) (*Target, error) {
 			}
 		}
 	}
-
 	if fallback != nil {
 		return fallback, nil
 	}
-	return nil, errors.New("no usable page target found in Chrome")
+	return nil, fmt.Errorf("no usable page target found on port %d matching %q", port, urlPattern)
+}
+
+// FindFlowTarget finds an existing Google Flow page on port.
+func FindFlowTarget(port int) (*Target, error) {
+	return FindTargetByPattern(port, "labs.google/fx/tools/flow")
+}
+
+// FindGeminiTarget finds a Gemini app page on port.
+func FindGeminiTarget(port int) (*Target, error) {
+	return FindTargetByPattern(port, "gemini.google.com")
 }
 
 // Connect connects to Chrome via its webSocketDebuggerUrl.
@@ -86,18 +108,16 @@ func (c *Client) Close() error {
 	return c.ws.Close()
 }
 
-// Evaluate evaluates a JavaScript expression in the tab and returns the value as a string.
-func (c *Client) Evaluate(ctx context.Context, expression string) (any, error) {
+// CallMethod sends a method invocation and waits for the matching response.
+func (c *Client) CallMethod(ctx context.Context, method string, params any) (map[string]any, error) {
 	id := atomic.AddInt64(&c.msgID, 1)
 
 	payload := map[string]any{
 		"id":     id,
-		"method": "Runtime.evaluate",
-		"params": map[string]any{
-			"expression":    expression,
-			"awaitPromise":  true,
-			"returnByValue": true,
-		},
+		"method": method,
+	}
+	if params != nil {
+		payload["params"] = params
 	}
 
 	c.mu.Lock()
@@ -123,16 +143,47 @@ func (c *Client) Evaluate(ctx context.Context, expression string) (any, error) {
 		respID, ok := raw["id"].(float64)
 		if ok && int64(respID) == id {
 			if errVal, hasErr := raw["error"]; hasErr {
-				return nil, fmt.Errorf("CDP error: %v", errVal)
+				return nil, fmt.Errorf("CDP error (%s): %v", method, errVal)
 			}
-			result, _ := raw["result"].(map[string]any)
-			innerResult, _ := result["result"].(map[string]any)
-			if subtype, _ := innerResult["subtype"].(string); subtype == "error" {
-				return nil, fmt.Errorf("JS error: %v", innerResult["description"])
-			}
-			return innerResult["value"], nil
+			res, _ := raw["result"].(map[string]any)
+			return res, nil
 		}
 	}
+}
+
+// GetCookies retrieves cookies for the given URLs via Network.getCookies.
+func (c *Client) GetCookies(ctx context.Context, urls []string) ([]Cookie, error) {
+	res, err := c.CallMethod(ctx, "Network.getCookies", map[string]any{"urls": urls})
+	if err != nil {
+		return nil, err
+	}
+	rawCookies, _ := res["cookies"].([]any)
+	data, err := json.Marshal(rawCookies)
+	if err != nil {
+		return nil, err
+	}
+	var cookies []Cookie
+	if err := json.Unmarshal(data, &cookies); err != nil {
+		return nil, err
+	}
+	return cookies, nil
+}
+
+// Evaluate evaluates a JavaScript expression in the tab and returns the value.
+func (c *Client) Evaluate(ctx context.Context, expression string) (any, error) {
+	res, err := c.CallMethod(ctx, "Runtime.evaluate", map[string]any{
+		"expression":    expression,
+		"awaitPromise":  true,
+		"returnByValue": true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	innerResult, _ := res["result"].(map[string]any)
+	if subtype, _ := innerResult["subtype"].(string); subtype == "error" {
+		return nil, fmt.Errorf("JS error: %v", innerResult["description"])
+	}
+	return innerResult["value"], nil
 }
 
 // GetRecaptchaToken requests a fresh reCAPTCHA Enterprise token from the Flow page.

@@ -14,6 +14,7 @@ import (
 
 	"github.com/xibodev/gflow-cli/pkg/client"
 	"github.com/xibodev/gflow-cli/pkg/config"
+	"github.com/xibodev/gflow-cli/pkg/gemini"
 	"github.com/xibodev/gflow-cli/pkg/history"
 	"github.com/xibodev/gflow-cli/pkg/models"
 	"github.com/xibodev/gflow-cli/pkg/remote"
@@ -42,10 +43,11 @@ type Error struct {
 	Message string `json:"message"`
 }
 
-// Server implements an MCP stdio server backed by the local daemon.
+// Server implements an MCP stdio server backed by the local daemon or Gemini.
 type Server struct {
-	remote *remote.Client
-	cfg    *config.Config
+	provider string
+	remote   *remote.Client
+	cfg      *config.Config
 	// legacy direct client (tests); when set, generation uses it instead.
 	flowClient *client.FlowClient
 
@@ -61,6 +63,7 @@ type Server struct {
 // NewServer creates a server backed by a FlowClient (legacy/tests).
 func NewServer(fc *client.FlowClient) *Server {
 	return &Server{
+		provider:    "flow",
 		flowClient:  fc,
 		cfg:         fc.Config(),
 		cancel:      make(map[string]context.CancelFunc),
@@ -72,7 +75,19 @@ func NewServer(fc *client.FlowClient) *Server {
 // NewServerRemote creates a daemon-backed server used by `gflow mcp`.
 func NewServerRemote(r *remote.Client, cfg *config.Config) *Server {
 	return &Server{
-		remote: r, cfg: cfg, cancel: make(map[string]context.CancelFunc),
+		provider: "flow",
+		remote:   r, cfg: cfg, cancel: make(map[string]context.CancelFunc),
+		HistoryList: history.List,
+		HistoryAdd:  history.Add,
+	}
+}
+
+// NewServerGemini creates an extension-free, daemon-free MCP server powered by Gemini.
+func NewServerGemini(cfg *config.Config) *Server {
+	return &Server{
+		provider:    "gemini",
+		cfg:         cfg,
+		cancel:      make(map[string]context.CancelFunc),
 		HistoryList: history.List,
 		HistoryAdd:  history.Add,
 	}
@@ -331,6 +346,19 @@ func (s *Server) executeTool(ctx context.Context, name string, args map[string]a
 	}
 	switch name {
 	case "get_flow_status":
+		if s.provider == "gemini" {
+			sess, err := gemini.LoadSession()
+			exe, exeErr := gemini.FindGeminiExecutable()
+			status := "ready"
+			updatedStr := "never"
+			if err != nil || sess == nil || sess.At == "" {
+				status = "unauthenticated"
+			} else {
+				updatedStr = sess.UpdatedAt.Format(time.RFC3339)
+			}
+			return fmt.Sprintf("Provider: Gemini (Extension-Free)\nApp Installed: %v (%s)\nSession Status: %s\nUpdated: %s",
+				exeErr == nil, exe, status, updatedStr), nil
+		}
 		if s.remote != nil {
 			st, err := s.remote.DetailedStatus(ctx)
 			if err != nil {
@@ -504,6 +532,31 @@ func (s *Server) outDir() string {
 }
 
 func (s *Server) generateImages(ctx context.Context, prompt, aspect string, count int, model string, refs []string, seed *int64) ([]models.Asset, string, error) {
+	if s.provider == "gemini" {
+		gc, err := gemini.NewClient(ctx, false)
+		if err != nil {
+			return nil, "", err
+		}
+		res, err := gc.Generate(ctx, "Generate an image of: "+prompt)
+		if err != nil {
+			return nil, "", err
+		}
+		var assets []models.Asset
+		for i, u := range res.ImageURLs {
+			p, err := gc.DownloadMedia(ctx, u, s.outDir())
+			if err == nil {
+				assets = append(assets, models.Asset{
+					ID:        fmt.Sprintf("gemini_img_%d", i+1),
+					Type:      "image",
+					URL:       u,
+					LocalPath: p,
+					Prompt:    prompt,
+					MimeType:  "image/jpeg",
+				})
+			}
+		}
+		return assets, s.outDir(), nil
+	}
 	if s.remote != nil {
 		assets, err := s.remote.GenerateImages(ctx, models.ImageRequest{
 			Prompt: prompt, N: count, Aspect: aspect, Model: model, ReferenceMediaIDs: refs, Seed: seed,
@@ -515,6 +568,32 @@ func (s *Server) generateImages(ctx context.Context, prompt, aspect string, coun
 }
 
 func (s *Server) generateVideo(ctx context.Context, prompt, aspect string, duration int, res, start, end string, seed *int64) ([]models.Asset, string, string, error) {
+	if s.provider == "gemini" {
+		gc, err := gemini.NewClient(ctx, false)
+		if err != nil {
+			return nil, "", "", err
+		}
+		genRes, err := gc.Generate(ctx, "Generate a video of: "+prompt)
+		if err != nil {
+			return nil, "", "", err
+		}
+		if genRes.VideoURL == "" {
+			return nil, "", "", fmt.Errorf("gemini response: %s", genRes.Text)
+		}
+		p, err := gc.DownloadMedia(ctx, genRes.VideoURL, s.outDir())
+		if err != nil {
+			return nil, "", "", err
+		}
+		asset := models.Asset{
+			ID:        fmt.Sprintf("gemini_vid_%d", time.Now().Unix()),
+			Type:      "video",
+			URL:       genRes.VideoURL,
+			LocalPath: p,
+			Prompt:    prompt,
+			MimeType:  "video/mp4",
+		}
+		return []models.Asset{asset}, s.outDir(), "720p", nil
+	}
 	delivered := "720p"
 	if s.remote != nil {
 		sub, err := s.remote.SubmitVideo(ctx, models.VideoSubmitRequest{
