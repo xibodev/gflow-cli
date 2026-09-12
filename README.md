@@ -49,13 +49,13 @@ gh release download -R xibodev/gflow-cli --pattern "*windows_amd64.zip" -D "$HOM
 gh release download -R xibodev/gflow-cli --pattern "*$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/').tar.gz" -D "$HOME/.gflow/bin"
 ```
 
-### One-Liner Install Scripts
+### One-Liner Install Scripts (No Extraction, Automatic PATH)
 ```powershell
 # Windows (PowerShell)
-irm https://raw.githubusercontent.com/xibodev/gflow-cli/main/scripts/install.ps1 | iex
+irm https://xibodev.github.io/gflow-cli/install.ps1 | iex
 
 # macOS & Linux (Bash)
-curl -fsSL https://raw.githubusercontent.com/xibodev/gflow-cli/main/scripts/install.sh | bash
+curl -fsSL https://xibodev.github.io/gflow-cli/install.sh | bash
 ```
 
 ### From Source (`go install`)
