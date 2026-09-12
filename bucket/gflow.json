@@ -1,19 +1,19 @@
 {
-    "version": "1.0.0",
+    "version": "1.1.0",
     "architecture": {
         "64bit": {
-            "url": "https://github.com/xibodev/gflow-cli/releases/download/v1.0.0/gflow_1.0.0_windows_amd64.zip",
+            "url": "https://github.com/xibodev/gflow-cli/releases/download/v1.1.0/gflow_1.1.0_windows_amd64.zip",
             "bin": [
                 "gflow.exe"
             ],
-            "hash": "9913d0bf60fcf8fc1deac24fab44c9e4702db97f70b4ed71245146081f48940c"
+            "hash": "cb8374562e95d211b1338fcb64ce6a316c24e4e22781fc67e2ea33d60bd25c66"
         },
         "arm64": {
-            "url": "https://github.com/xibodev/gflow-cli/releases/download/v1.0.0/gflow_1.0.0_windows_arm64.zip",
+            "url": "https://github.com/xibodev/gflow-cli/releases/download/v1.1.0/gflow_1.1.0_windows_arm64.zip",
             "bin": [
                 "gflow.exe"
             ],
-            "hash": "29ba737165aacbe9067ee0efa9ddca812a0d6305b8633826a5af3c4719f4a2f4"
+            "hash": "e920dbae3f7d04858e29097d6f59d5be3fc872f864cbbe982a8e809ed5ebc038"
         }
     },
     "homepage": "https://github.com/xibodev/gflow-cli",
