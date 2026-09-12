@@ -67,7 +67,7 @@ if ($UserPath -notlike "*$InstallDir*") {
     Write-Host "Added $InstallDir to User PATH." -ForegroundColor Green
 }
 
-Write-Host "`n✔ gflow installed successfully!" -ForegroundColor Green
+Write-Host "`n[OK] gflow installed successfully!" -ForegroundColor Green
 Write-Host "Location: $InstallDir\gflow.exe" -ForegroundColor Gray
 
 Write-Host "`nQuickstart & Getting Started:" -ForegroundColor Cyan
@@ -81,9 +81,9 @@ Write-Host "  4. Generate a video (Veo / MiniMax H3):" -ForegroundColor White
 Write-Host "     gflow video `"ocean waves crashing against cliffs`"" -ForegroundColor Yellow
 
 Write-Host "`nSupported Providers:" -ForegroundColor Cyan
-Write-Host "  • Gemini (default): Extension-free Imagen 3 images, Veo video, Lyria music, Flash chat." -ForegroundColor Gray
-Write-Host "  • MiniMax: H3 video via captured desktop token ('gflow video ... -P minimax')." -ForegroundColor Gray
-Write-Host "  • Google Flow: Extension-free via CDP ('gflow browser', then 'gflow image ... -P flow')." -ForegroundColor Gray
+Write-Host "  - Gemini (default): Extension-free Imagen 3 images, Veo video, Lyria music, Flash chat." -ForegroundColor Gray
+Write-Host "  - MiniMax: H3 video via captured desktop token ('gflow video ... -P minimax')." -ForegroundColor Gray
+Write-Host "  - Google Flow: Extension-free via CDP ('gflow browser', then 'gflow image ... -P flow')." -ForegroundColor Gray
 
 Write-Host "`nMCP for AI Coding Assistants (Cursor / Claude / OpenCode / Windsurf):" -ForegroundColor Cyan
 Write-Host "  Command: gflow" -ForegroundColor Gray
