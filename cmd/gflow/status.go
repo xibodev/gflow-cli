@@ -57,18 +57,18 @@ var statusCmd = &cobra.Command{
 		fmt.Println()
 
 		// Gemini
-		fmt.Println("[Gemini] (Default — Extension-Free: Imagen 3, Veo, Audio, Chat)")
+		fmt.Println("[Gemini] (Default: Imagen 3, Veo, Audio, Chat)")
 		fmt.Printf("  App Installed:    %s\n", formatBool(geminiExeErr == nil, "Found ("+geminiExe+")", "Not Found"))
 		fmt.Printf("  Session State:    %s\n", formatBool(geminiReady, fmt.Sprintf("Ready (Updated %s ago)", time.Since(geminiSess.UpdatedAt).Round(time.Minute)), "Missing (Run 'gflow chat' or open Gemini app once)"))
 		fmt.Println()
 
 		// MiniMax
-		fmt.Println("[MiniMax Design] (Direct Cloud — H3 Video)")
+		fmt.Println("[MiniMax Design] (Direct Cloud: H3 Video)")
 		fmt.Printf("  Session State:    %s\n", formatBool(minimaxReady, "Ready (Captured from Desktop app)", "Missing"))
 		fmt.Println()
 
 		// Flow
-		fmt.Println("[Google Flow] (Legacy / Daemon)")
+		fmt.Println("[Google Flow] (Direct CDP / Daemon)")
 		fmt.Printf("  Daemon Running:   %s\n", formatBool(flowRunning, fmt.Sprintf("http://%s:%d", cfg.Host, cfg.Port), "Stopped"))
 		fmt.Println()
 

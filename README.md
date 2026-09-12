@@ -5,15 +5,14 @@
 [![Google Flow](https://img.shields.io/badge/Google_Flow-Imagen_4_&_Veo_3.1-4285F4?logo=google)](https://labs.google/fx/tools/flow)
 [![MCP v2](https://img.shields.io/badge/MCP_v2-Supported-7057ff)](https://modelcontextprotocol.io)
 
-**gflow** is a single-binary CLI, OpenAI-compatible API, and Model Context Protocol (MCP) server for multi-provider AI media generation.
+**gflow** is a single-binary CLI and Model Context Protocol (MCP) server for generative media: image, video, audio, and chat.
 
-- 🖼️ **Extension-Free Image Generation** via **Gemini Imagen 3** or **Flow Imagen 4**.
-- 🎬 **Extension-Free Video Generation** via **Gemini Veo**, **MiniMax H3**, or **Google Flow**.
-- 🎵 **Music & Audio Generation** via **Gemini Lyria (MusicFX)** (`gflow audio`).
-- 💬 **Instant Terminal Chat** with **Gemini Flash** (`gflow chat`).
-- ⚡ **Zero-Extension Mode**: Direct HTTPS requests using captured desktop session tokens with zero browser extensions required.
-- 🤖 **Native MCP Server** for Claude Desktop, Cursor, OpenCode, Cline, and Windsurf.
-- 🚀 **Multi-Provider Architecture**: Switch seamlessly between `gemini` (default), `minimax`, and `flow` via `--provider` or `GFLOW_PROVIDER`.
+- **Image Generation:** Gemini Imagen 3 and Google Flow Imagen 4 (Pro and Lite models).
+- **Video Generation:** Gemini Veo, MiniMax H3 (768P and 2K), and Google Flow Veo 3.1.
+- **Audio & Music:** Native music track synthesis via Gemini Lyria / MusicFX (`gflow audio`).
+- **Terminal Chat:** Direct conversational interface with Gemini Flash (`gflow chat`).
+- **MCP Server:** Native stdio integration for Claude Desktop, Cursor, OpenCode, Cline, and Windsurf.
+- **Unified Backends:** Switch between `gemini` (default), `minimax`, and `flow` via `--provider`.
 
 ---
 
@@ -97,14 +96,14 @@ gflow status
 ```text
 === AI Providers Status ===
 
-[Gemini] (Default — Extension-Free: Imagen 3, Veo, Audio, Chat)
+[Gemini] (Default: Imagen 3, Veo, Audio, Chat)
   App Installed:    ✔ Found
   Session State:    ✔ Ready
 
-[MiniMax Design] (Direct Cloud — H3 Video)
+[MiniMax Design] (Direct Cloud: H3 Video)
   Session State:    ✔ Ready
 
-[Google Flow] (Legacy / Daemon)
+[Google Flow] (Direct CDP / Daemon)
   Daemon Running:   ✖ Stopped
 ```
 
@@ -113,9 +112,9 @@ gflow status
 ## Provider Selection
 
 Select your backend via `--provider` (`-P`) or `export GFLOW_PROVIDER=gemini`:
-- `gemini` (**default**): Pure HTTPS, zero extensions, zero background servers. Powered by Gemini Desktop session. Generates Imagen 3 images, Veo video, Lyria audio, and terminal chat.
-- `minimax`: Direct cloud generation to MiniMax H3. Captured from local MiniMax Design app.
-- `flow`: Original Google Flow backend (Imagen 4 + Veo 3.1) via local daemon and bridge.
+- `gemini` (**default**): Pure HTTPS requests powered by your local Gemini Desktop session. Generates Imagen 3 images, Veo video, Lyria audio, and terminal chat.
+- `minimax`: Direct cloud generation to MiniMax H3 using your desktop app credentials.
+- `flow`: Google Flow backend (Imagen 4 and Veo 3.1) via direct CDP or local daemon.
 
 ---
 

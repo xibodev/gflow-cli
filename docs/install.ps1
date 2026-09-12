@@ -75,15 +75,15 @@ Write-Host "  1. Check provider status:" -ForegroundColor White
 Write-Host "     gflow status" -ForegroundColor Yellow
 Write-Host "  2. Test chat in terminal (Gemini Flash):" -ForegroundColor White
 Write-Host "     gflow chat `"Hello Gemini`"" -ForegroundColor Yellow
-Write-Host "  3. Generate an image (Imagen 3, extension-free):" -ForegroundColor White
+Write-Host "  3. Generate an image (Imagen 3):" -ForegroundColor White
 Write-Host "     gflow image `"cyberpunk cat on a neon roof`"" -ForegroundColor Yellow
 Write-Host "  4. Generate a video (Veo / MiniMax H3):" -ForegroundColor White
 Write-Host "     gflow video `"ocean waves crashing against cliffs`"" -ForegroundColor Yellow
 
 Write-Host "`nSupported Providers:" -ForegroundColor Cyan
-Write-Host "  - Gemini (default): Extension-free Imagen 3 images, Veo video, Lyria music, Flash chat." -ForegroundColor Gray
-Write-Host "  - MiniMax: H3 video via captured desktop token ('gflow video ... -P minimax')." -ForegroundColor Gray
-Write-Host "  - Google Flow: Extension-free via CDP ('gflow browser', then 'gflow image ... -P flow')." -ForegroundColor Gray
+Write-Host "  - Gemini (default): Imagen 3 images, Veo video, Lyria music, Flash chat." -ForegroundColor Gray
+Write-Host "  - MiniMax: H3 video ('gflow video ... -P minimax')." -ForegroundColor Gray
+Write-Host "  - Google Flow: Flow Imagen 4 & Veo 3.1 ('gflow image ... -P flow')." -ForegroundColor Gray
 
 Write-Host "`nMCP for AI Coding Assistants (Cursor / Claude / OpenCode / Windsurf):" -ForegroundColor Cyan
 Write-Host "  Command: gflow" -ForegroundColor Gray
