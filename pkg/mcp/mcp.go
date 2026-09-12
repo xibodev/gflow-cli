@@ -105,11 +105,10 @@ func (s *Server) RunWithIO(in io.Reader, out io.Writer) error {
 		line, err := reader.ReadBytes('\n')
 		if err != nil {
 			if err == io.EOF {
-				// Process a final complete message without trailing newline.
 				if len(bytes.TrimSpace(line)) > 0 {
 					s.dispatch(line, out)
-					s.waitIdle(5 * time.Second)
 				}
+				s.waitIdle(5 * time.Second)
 				s.cancelAll()
 				return nil
 			}
