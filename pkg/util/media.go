@@ -279,6 +279,11 @@ func SaveAsset(ctx context.Context, asset *models.Asset, outputPath string) (str
 
 // SaveAssetIndexed saves one of total assets, honoring explicit filenames.
 func SaveAssetIndexed(ctx context.Context, asset *models.Asset, outputPath string, index, total int) (string, error) {
+	if asset.LocalPath != "" {
+		if st, err := os.Stat(asset.LocalPath); err == nil && st.Size() > 0 {
+			return asset.LocalPath, nil
+		}
+	}
 	if asset.URL == "" {
 		return "", errors.New("asset has no downloadable URL")
 	}

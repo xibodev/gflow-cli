@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -249,15 +250,23 @@ func (s *Server) getToolsList() []map[string]any {
 				}, "required": []string{"prompt"}},
 		},
 		{
-			"name": "generate_flow_video", "description": "Generate AI videos using Google Flow (Veo 3.1).",
+			"name": "generate_flow_video",
+			"description": "Generate AI videos with native synchronous audio (dialogue, voiceover, SFX, ambience) using Veo 3.1.\n\n" +
+				"PROMPTING TIPS FOR AGENTS:\n" +
+				"• Multi-Scene Cuts: Use timestamp prefixes to cut scenes within a clip: '[00:00-00:04] Wide shot of... [00:04-00:08] Close-up of...'.\n" +
+				"• Dialogue & Lip-Sync: Use colon syntax to speak and avoid burnt-in subtitles: 'Character looks at camera and says: \"Hello world\"'.\n" +
+				"• Voice & Language: Specify narrator gender, language, and tone: 'Audio: A female French narrator speaks calmly in French, saying: \"...\"'.\n" +
+				"• Foley & Ambience: Layer background sounds: 'SFX: gentle rain, crackling fireplace. Audio: no background music'.\n" +
+				"• Subtitle Prevention: Always append '(no subtitles, no text overlays)' at the end.\n" +
+				"• Multi-Clip Assembly: For long videos (>10s), generate sequential continuation clips that an agent can concatenate via ffmpeg.",
 			"inputSchema": map[string]any{"type": "object",
 				"properties": map[string]any{
-					"prompt":      map[string]any{"type": "string", "description": "Video scene and motion."},
-					"duration":    map[string]any{"type": "integer", "description": "4, 6, 8, or 10.", "default": 10, "enum": []int{4, 6, 8, 10}},
-					"aspect":      map[string]any{"type": "string", "description": "landscape, portrait, square.", "default": "landscape"},
+					"prompt":      map[string]any{"type": "string", "description": "Scene, camera motion, and audio prompt (dialogue, SFX, voiceover, language)."},
+					"duration":    map[string]any{"type": "integer", "description": "Clip duration in seconds: 4, 6, 8, or 10.", "default": 10, "enum": []int{4, 6, 8, 10}},
+					"aspect":      map[string]any{"type": "string", "description": "landscape (16:9), portrait (9:16), square (1:1).", "default": "landscape"},
 					"resolution":  map[string]any{"type": "string", "description": "720p native, or 1080p/4k via upsample.", "default": "720p"},
-					"start_image": map[string]any{"type": "string", "description": "Start frame file path or media ID."},
-					"end_image":   map[string]any{"type": "string", "description": "End frame file path or media ID."},
+					"start_image": map[string]any{"type": "string", "description": "Start frame file path or media ID for image-to-video."},
+					"end_image":   map[string]any{"type": "string", "description": "End frame file path or media ID for first-to-last frame interpolation."},
 					"seed":        map[string]any{"type": "integer", "description": "Reproducible seed."},
 				}, "required": []string{"prompt"}},
 		},
@@ -429,7 +438,18 @@ func (s *Server) executeTool(ctx context.Context, name string, args map[string]a
 		if len(saved) == 0 {
 			return "", fmt.Errorf("generation produced no downloadable assets (save errors: %v)", saveErrs)
 		}
-		msg := fmt.Sprintf("Generated %d image(s):\n%s", len(saved), formatBulletList(saved))
+		absPath, _ := filepath.Abs(saved[0])
+		resultData := map[string]any{
+			"status":    "completed",
+			"file_path": absPath,
+			"files":     saved,
+			"count":     len(saved),
+			"aspect":    aspect,
+			"model":     model,
+			"prompt":    prompt,
+		}
+		jsonBytes, _ := json.MarshalIndent(resultData, "", "  ")
+		msg := fmt.Sprintf("Generated %d image(s):\n%s", len(saved), string(jsonBytes))
 		for _, e := range saveErrs {
 			msg += "\nWarning: " + e
 		}
@@ -484,7 +504,18 @@ func (s *Server) executeTool(ctx context.Context, name string, args map[string]a
 		if len(saved) == 0 {
 			return "", fmt.Errorf("video produced no downloadable assets (save errors: %v)", saveErrs)
 		}
-		msg := fmt.Sprintf("Generated video (%s):\n%s", deliveredRes, formatBulletList(saved))
+		absPath, _ := filepath.Abs(saved[0])
+		resultData := map[string]any{
+			"status":     "completed",
+			"file_path":  absPath,
+			"duration":   duration,
+			"aspect":     aspect,
+			"resolution": deliveredRes,
+			"has_audio":  true,
+			"prompt":     prompt,
+		}
+		jsonBytes, _ := json.MarshalIndent(resultData, "", "  ")
+		msg := fmt.Sprintf("Generated video (%s):\n%s", deliveredRes, string(jsonBytes))
 		for _, e := range saveErrs {
 			msg += "\nWarning: " + e
 		}
