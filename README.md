@@ -67,25 +67,30 @@ go install github.com/xibodev/gflow-cli/cmd/gflow@latest
 
 ## 30-Second Quickstart
 
-### 1. Run Setup (One-Time)
+### 1. Zero-Setup Mode (Gemini & MiniMax)
+If you have the **Gemini desktop app** or **MiniMax Design** logged in on your machine, zero setup is needed. You can start generating immediately:
 ```bash
-gflow setup
+# Instant conversational check
+gflow chat "What is quantum computing in one sentence?"
+
+# Generate high-res image (Imagen 3, extension-free)
+gflow image "a golden origami butterfly on black velvet"
 ```
-This extracts the bundled extension to `~/.gflow/extension`, writes its local
-endpoint configuration, and opens Chrome:
-1. Open `chrome://extensions` in Chrome.
-2. Toggle on **Developer mode** (top-right).
-3. Click **Load unpacked** and select the printed directory (`~/.gflow/extension`).
-4. Ensure you are signed in on [Google Flow](https://labs.google/fx/tools/flow).
-5. Set your Flow project for generation (status/setup work without it):
-   `DEFAULT_PROJECT=<your-flow-project-id>`.
 
-Setup generates persistent local credentials (`~/.gflow/auth.json`) for the
-CLI/MCP client and the extension. If you change host/port (`FLOW_HOST` /
-`FLOW_PORT` or `gflow serve --host/--port`), re-run `gflow setup` and click
-**Reload** on the unpacked extension so it picks up the new endpoints.
+### 2. Google Flow Mode
+If you prefer generating via **Google Flow** (Imagen 4 / Veo 3.1):
+- **Option A (Extension-Free via CDP, recommended):**
+  ```bash
+  gflow browser
+  ```
+  Launches Chrome with a dedicated Flow profile on port 9222. Sign in once, then run `gflow image "..." -P flow`.
+- **Option B (Extension Bridge):**
+  ```bash
+  gflow setup
+  ```
+  Extracts the bundled Chrome extension to `~/.gflow/extension` and guides you to load it unpacked in `chrome://extensions`.
 
-### 2. Verify Connection
+### 3. Check Provider Status
 ```bash
 gflow status
 ```
