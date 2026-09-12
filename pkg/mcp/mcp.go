@@ -44,6 +44,21 @@ type Error struct {
 	Message string `json:"message"`
 }
 
+// VideoJob tracks asynchronous video generation progress.
+type VideoJob struct {
+	ID          string     `json:"job_id"`
+	Status      string     `json:"status"` // "processing", "completed", "failed"
+	Prompt      string     `json:"prompt"`
+	Aspect      string     `json:"aspect"`
+	Duration    int        `json:"duration"`
+	Resolution  string     `json:"resolution"`
+	CreatedAt   time.Time  `json:"created_at"`
+	CompletedAt *time.Time `json:"completed_at,omitempty"`
+	FilePath    string     `json:"file_path,omitempty"`
+	HasAudio    bool       `json:"has_audio,omitempty"`
+	Error       string     `json:"error,omitempty"`
+}
+
 // Server implements an MCP stdio server backed by the local daemon or Gemini.
 type Server struct {
 	provider string
@@ -57,6 +72,9 @@ type Server struct {
 	cancel map[string]context.CancelFunc
 	wg     sync.WaitGroup
 
+	jobsMu sync.RWMutex
+	jobs   map[string]*VideoJob
+
 	HistoryList func(int) ([]history.Entry, error)
 	HistoryAdd  func(history.Entry) error
 }
@@ -68,6 +86,7 @@ func NewServer(fc *client.FlowClient) *Server {
 		flowClient:  fc,
 		cfg:         fc.Config(),
 		cancel:      make(map[string]context.CancelFunc),
+		jobs:        make(map[string]*VideoJob),
 		HistoryList: history.List,
 		HistoryAdd:  history.Add,
 	}
@@ -78,6 +97,7 @@ func NewServerRemote(r *remote.Client, cfg *config.Config) *Server {
 	return &Server{
 		provider: "flow",
 		remote:   r, cfg: cfg, cancel: make(map[string]context.CancelFunc),
+		jobs:        make(map[string]*VideoJob),
 		HistoryList: history.List,
 		HistoryAdd:  history.Add,
 	}
@@ -89,6 +109,7 @@ func NewServerGemini(cfg *config.Config) *Server {
 		provider:    "gemini",
 		cfg:         cfg,
 		cancel:      make(map[string]context.CancelFunc),
+		jobs:        make(map[string]*VideoJob),
 		HistoryList: history.List,
 		HistoryAdd:  history.Add,
 	}
@@ -251,7 +272,9 @@ func (s *Server) getToolsList() []map[string]any {
 		},
 		{
 			"name": "generate_flow_video",
-			"description": "Generate AI videos with native synchronous audio (dialogue, voiceover, SFX, ambience) using Veo 3.1.\n\n" +
+			"description": "Start AI video generation with native synchronous audio (dialogue, voiceover, SFX, ambience) using Veo 3.1.\n\n" +
+				"NON-BLOCKING WORKFLOW:\n" +
+				"Returns immediately with a 'job_id' (in <1s) to prevent client socket timeouts. Poll 'get_flow_status(job_id=...)' every 10-15s until 'status' is 'completed', which returns the final 'file_path'. Multiple video jobs can be started in parallel.\n\n" +
 				"PROMPTING TIPS FOR AGENTS:\n" +
 				"• Multi-Scene Cuts: Use timestamp prefixes to cut scenes within a clip: '[00:00-00:04] Wide shot of... [00:04-00:08] Close-up of...'.\n" +
 				"• Dialogue & Lip-Sync: Use colon syntax to speak and avoid burnt-in subtitles: 'Character looks at camera and says: \"Hello world\"'.\n" +
@@ -281,8 +304,17 @@ func (s *Server) getToolsList() []map[string]any {
 				}, "required": []string{"media_id"}},
 		},
 		{
-			"name": "get_flow_status", "description": "Check daemon, extension and token readiness.",
-			"inputSchema": map[string]any{"type": "object", "properties": map[string]any{}},
+			"name": "get_flow_status",
+			"description": "Check AI provider readiness or poll an ongoing video generation job. Pass 'job_id' to check if a video has completed rendering and retrieve its file_path.",
+			"inputSchema": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"job_id": map[string]any{
+						"type":        "string",
+						"description": "Optional video job ID (e.g. 'job_vid_...') to check generation progress or retrieve output file_path.",
+					},
+				},
+			},
 		},
 		{
 			"name": "get_flow_history", "description": "List recent generations.",
@@ -354,6 +386,46 @@ func (s *Server) executeTool(ctx context.Context, name string, args map[string]a
 	}
 	switch name {
 	case "get_flow_status":
+		jobID, _ := args["job_id"].(string)
+		if jobID == "" {
+			jobID, _ = args["jobId"].(string)
+		}
+		if jobID != "" {
+			s.jobsMu.RLock()
+			job, ok := s.jobs[jobID]
+			s.jobsMu.RUnlock()
+			if !ok {
+				res := map[string]any{
+					"status":  "not_found",
+					"job_id":  jobID,
+					"message": fmt.Sprintf("job %s not found in registry", jobID),
+				}
+				b, _ := json.MarshalIndent(res, "", "  ")
+				return string(b), nil
+			}
+			res := map[string]any{
+				"status":   job.Status,
+				"job_id":   job.ID,
+				"prompt":   job.Prompt,
+				"duration": job.Duration,
+				"aspect":   job.Aspect,
+			}
+			if job.Status == "processing" {
+				res["elapsed_seconds"] = int(time.Since(job.CreatedAt).Seconds())
+				res["message"] = "Video is still generating in background. Continue polling."
+			} else if job.Status == "completed" {
+				res["file_path"] = job.FilePath
+				res["resolution"] = job.Resolution
+				res["has_audio"] = job.HasAudio
+				res["message"] = "Video generation completed successfully."
+			} else if job.Status == "failed" {
+				res["error"] = job.Error
+				res["message"] = "Video generation failed."
+			}
+			b, _ := json.MarshalIndent(res, "", "  ")
+			return string(b), nil
+		}
+
 		if s.provider == "gemini" {
 			sess, err := gemini.LoadSession()
 			exe, exeErr := gemini.FindGeminiExecutable()
@@ -496,30 +568,57 @@ func (s *Server) executeTool(ctx context.Context, name string, args map[string]a
 				end = mid
 			}
 		}
-		assets, outDir, deliveredRes, err := s.generateVideo(ctx, prompt, aspect, duration, res, start, end, seed)
-		if err != nil {
-			return "", err
+		jobID := fmt.Sprintf("job_vid_%d", time.Now().UnixNano())
+		job := &VideoJob{
+			ID:         jobID,
+			Status:     "processing",
+			Prompt:     prompt,
+			Aspect:     aspect,
+			Duration:   duration,
+			Resolution: res,
+			CreatedAt:  time.Now(),
 		}
-		saved, saveErrs := s.saveAssets(ctx, assets, outDir, "video", prompt, aspect, "")
-		if len(saved) == 0 {
-			return "", fmt.Errorf("video produced no downloadable assets (save errors: %v)", saveErrs)
-		}
-		absPath, _ := filepath.Abs(saved[0])
+		s.jobsMu.Lock()
+		s.jobs[jobID] = job
+		s.jobsMu.Unlock()
+
+		go func() {
+			bgCtx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+			defer cancel()
+
+			assets, outDir, deliveredRes, err := s.generateVideo(bgCtx, prompt, aspect, duration, res, start, end, seed)
+			s.jobsMu.Lock()
+			defer s.jobsMu.Unlock()
+			now := time.Now()
+			job.CompletedAt = &now
+			if err != nil {
+				job.Status = "failed"
+				job.Error = err.Error()
+				return
+			}
+			saved, _ := s.saveAssets(bgCtx, assets, outDir, "video", prompt, aspect, "")
+			if len(saved) == 0 {
+				job.Status = "failed"
+				job.Error = "generation produced no downloadable assets"
+				return
+			}
+			absPath, _ := filepath.Abs(saved[0])
+			job.Status = "completed"
+			job.FilePath = absPath
+			job.Resolution = deliveredRes
+			job.HasAudio = true
+		}()
+
 		resultData := map[string]any{
-			"status":     "completed",
-			"file_path":  absPath,
-			"duration":   duration,
-			"aspect":     aspect,
-			"resolution": deliveredRes,
-			"has_audio":  true,
-			"prompt":     prompt,
+			"status":   "processing",
+			"job_id":   jobID,
+			"prompt":   prompt,
+			"duration": duration,
+			"aspect":   aspect,
+			"message":  fmt.Sprintf("Video generation started in background. Poll get_flow_status(job_id=%q) every 10-15s until completed.", jobID),
 		}
 		jsonBytes, _ := json.MarshalIndent(resultData, "", "  ")
-		msg := fmt.Sprintf("Generated video (%s):\n%s", deliveredRes, string(jsonBytes))
-		for _, e := range saveErrs {
-			msg += "\nWarning: " + e
-		}
-		return msg, nil
+		return string(jsonBytes), nil
 	case "upsample_flow_video":
 		mediaID, _ := args["media_id"].(string)
 		if mediaID == "" {

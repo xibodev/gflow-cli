@@ -128,3 +128,50 @@ func TestHistoryToolUsesInjectedStore(t *testing.T) {
 		t.Fatalf("history must come from store: %s", text)
 	}
 }
+
+func TestAsyncVideoSubmitAndPoll(t *testing.T) {
+	_, rc := daemonStub(t)
+	s := NewServerRemote(rc, &config.Config{OutputDir: t.TempDir()})
+
+	// Submit video job
+	out := call(t, s, "tools/call", 10, map[string]any{
+		"name": "generate_flow_video",
+		"arguments": map[string]any{
+			"prompt":   "test scene in city",
+			"duration": 10,
+			"aspect":   "landscape",
+		},
+	})
+	res := out["result"].(map[string]any)
+	text := res["content"].([]any)[0].(map[string]any)["text"].(string)
+
+	var submitData map[string]any
+	if err := json.Unmarshal([]byte(text), &submitData); err != nil {
+		t.Fatalf("submit response must be valid JSON: %v, raw: %s", err, text)
+	}
+	if submitData["status"] != "processing" {
+		t.Fatalf("expected status 'processing', got %v", submitData["status"])
+	}
+	jobID, ok := submitData["job_id"].(string)
+	if !ok || jobID == "" {
+		t.Fatalf("expected non-empty job_id, got %v", submitData["job_id"])
+	}
+
+	// Poll status
+	pollOut := call(t, s, "tools/call", 11, map[string]any{
+		"name": "get_flow_status",
+		"arguments": map[string]any{
+			"job_id": jobID,
+		},
+	})
+	pollRes := pollOut["result"].(map[string]any)
+	pollText := pollRes["content"].([]any)[0].(map[string]any)["text"].(string)
+
+	var pollData map[string]any
+	if err := json.Unmarshal([]byte(pollText), &pollData); err != nil {
+		t.Fatalf("poll response must be valid JSON: %v, raw: %s", err, pollText)
+	}
+	if pollData["job_id"] != jobID {
+		t.Fatalf("expected polled job_id %s, got %v", jobID, pollData["job_id"])
+	}
+}
