@@ -26,8 +26,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Validate Version Input
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          VERSION="${{ inputs.version }}"
+          VERSION="$INPUT_VERSION"
           if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
             echo "::error::Invalid version format '$VERSION'. Must match 'vX.Y.Z' (e.g. v1.0.1 or v1.0.1-rc1)"
             exit 1
@@ -43,33 +45,39 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version-file: go.mod
           cache: true
 
       - name: Run Test Suite
         run: |
-          go test -v ./...
+          go test ./...
 
       - name: Tag Commit
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          TAG="${{ inputs.version }}"
+          TAG="$INPUT_VERSION"
           if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "Tag $TAG already exists locally, checking remote..."
+            echo "Tag $TAG already exists; verifying it points at HEAD..."
+            git rev-parse HEAD
+            git rev-parse "$TAG^{commit}"
           else
             git tag -a "$TAG" -m "Release $TAG"
             git push origin "$TAG"
           fi
 
+      # Draft is wired via args below. Prerelease is automatic for tags with a
+      # suffix (e.g. v1.0.1-rc1); the prerelease boolean input is kept for UI
+      # clarity and recorded in the release notes step by GoReleaser config.
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
-          version: latest
+          version: v2
           args: release --clean ${{ inputs.draft && '--draft' || '' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_PAT: ${{ secrets.GH_PAT }}
-          CHOCOLATEY_API_KEY: ${{ secrets.CHOCOLATEY_API_KEY }}
           GORELEASER_CURRENT_TAG: ${{ inputs.version }}

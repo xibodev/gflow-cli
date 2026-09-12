@@ -1,22 +1,26 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 	"time"
 
+	"github.com/spf13/cobra"
+	"github.com/xibodev/gflow-cli/pkg/cdp"
+	"github.com/xibodev/gflow-cli/pkg/client"
 	"github.com/xibodev/gflow-cli/pkg/config"
 	"github.com/xibodev/gflow-cli/pkg/daemon"
+	"github.com/xibodev/gflow-cli/pkg/gemini"
 	"github.com/xibodev/gflow-cli/pkg/history"
+	"github.com/xibodev/gflow-cli/pkg/minimax"
 	"github.com/xibodev/gflow-cli/pkg/models"
-	"github.com/xibodev/gflow-cli/pkg/util"
-	"github.com/spf13/cobra"
+	"github.com/xibodev/gflow-cli/pkg/remote"
 )
 
 var (
@@ -32,234 +36,375 @@ var (
 var videoCmd = &cobra.Command{
 	Use:     "video <prompt>",
 	Aliases: []string{"vid"},
-	Short:   "Generate AI videos (Veo 3.1)",
+	Short:   "Generate AI videos (Gemini Veo, MiniMax H3, or Flow)",
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		prompt := args[0]
-		cfg := config.LoadConfig()
-
-		// 1. Ensure server is running
-		if err := daemon.EnsureRunning(cfg.Host, cfg.Port); err != nil {
-			return fmt.Errorf("background server error: %w", err)
-		}
-
-		// 2. Check health
-		healthURL := fmt.Sprintf("http://%s:%d/health", cfg.Host, cfg.Port)
-		client := &http.Client{Timeout: 5 * time.Second}
-		resp, err := client.Get(healthURL)
-		if err != nil {
-			return fmt.Errorf("could not connect to gflow agent on %s: %w", healthURL, err)
-		}
-		defer resp.Body.Close()
-
-		var health map[string]any
-		_ = json.NewDecoder(resp.Body).Decode(&health)
-
-		if connected, _ := health["extension_connected"].(bool); !connected {
-			return fmt.Errorf("Chrome extension not connected. Run 'gflow setup' and open https://labs.google/fx/tools/flow")
-		}
-
-		if hasToken, _ := health["has_flow_key"].(bool); !hasToken {
-			return fmt.Errorf("Google Flow session not ready. Open https://labs.google/fx/tools/flow in Chrome")
-		}
-
-		// 3. Handle start / end frame uploads if provided
-		startID := vidStart
-		if startID != "" && fileExists(startID) {
-			if !jsonOutput {
-				fmt.Printf("Uploading start frame %s...\n", startID)
-			}
-			mid, err := uploadLocalFile(cfg, startID)
-			if err != nil {
-				return fmt.Errorf("failed to upload start frame: %w", err)
-			}
-			startID = mid
-		}
-
-		endID := vidEnd
-		if endID != "" && fileExists(endID) {
-			if !jsonOutput {
-				fmt.Printf("Uploading end frame %s...\n", endID)
-			}
-			mid, err := uploadLocalFile(cfg, endID)
-			if err != nil {
-				return fmt.Errorf("failed to upload end frame: %w", err)
-			}
-			endID = mid
-		}
-
-		// 4. Submit video generation
-		if !jsonOutput {
-			fmt.Printf("Submitting video generation: %q [%s, %ds]...\n", prompt, vidAspect, vidDuration)
-		}
-
-		reqBody := map[string]any{
-			"prompt":      prompt,
-			"aspect":      vidAspect,
-			"duration":    vidDuration,
-			"resolution":  vidResolution,
-			"start_image": startID,
-			"end_image":   endID,
-		}
-		bodyBytes, _ := json.Marshal(reqBody)
-
-		url := fmt.Sprintf("http://%s:%d/v1/videos/generations", cfg.Host, cfg.Port)
-		submitResp, err := http.Post(url, "application/json", bytes.NewReader(bodyBytes))
-		if err != nil {
-			return fmt.Errorf("failed to submit video job: %w", err)
-		}
-		defer submitResp.Body.Close()
-
-		if submitResp.StatusCode != http.StatusOK {
-			b, _ := io.ReadAll(submitResp.Body)
-			return fmt.Errorf("server error (%d): %s", submitResp.StatusCode, string(b))
-		}
-
-		var submitResult struct {
-			JobID  string `json:"job_id"`
-			Status string `json:"status"`
-		}
-		_ = json.NewDecoder(submitResp.Body).Decode(&submitResult)
-
-		if !jsonOutput {
-			fmt.Printf("✔ Job submitted! Media ID: %s\n", submitResult.JobID)
-			fmt.Print("Rendering video...")
-		}
-
-		// 5. Poll for completion
-		pollURL := fmt.Sprintf("http://%s:%d/v1/videos/generations/%s", cfg.Host, cfg.Port, submitResult.JobID)
-		pollClient := &http.Client{Timeout: 35 * time.Second}
-		startTime := time.Now()
-
-		for {
-			time.Sleep(6 * time.Second)
-			pollResp, err := pollClient.Get(pollURL)
-			if err != nil {
-				continue
-			}
-
-			var pollResult struct {
-				JobID  string         `json:"job_id"`
-				Status string         `json:"status"`
-				Assets []models.Asset `json:"assets"`
-			}
-			_ = json.NewDecoder(pollResp.Body).Decode(&pollResult)
-			pollResp.Body.Close()
-
-			if pollResult.Status == "succeeded" && len(pollResult.Assets) > 0 {
-				if !jsonOutput {
-					fmt.Printf(" Done! (%ds)\n", int(time.Since(startTime).Seconds()))
-				}
-
-				assets := pollResult.Assets
-
-				// Handle upsample to 1080p or 4K if requested
-				if vidResolution == "1080p" || vidResolution == "4k" {
-					if !jsonOutput {
-						fmt.Printf("Upsampling to %s...\n", vidResolution)
-					}
-					upAssets, err := triggerRemoteUpsample(cfg, assets[0].ID, vidAspect, vidResolution)
-					if err == nil && len(upAssets) > 0 {
-						assets = upAssets
-					}
-				}
-
-				outDir := vidOutput
-				if outDir == "" {
-					outDir = cfg.OutputDir
-				}
-				_ = os.MkdirAll(outDir, 0755)
-
-				for i := range assets {
-					a := &assets[i]
-					savedPath, err := util.SaveAsset(context.Background(), a, outDir)
-					if err == nil {
-						a.LocalPath = savedPath
-						if !jsonOutput {
-							absPath, _ := filepath.Abs(savedPath)
-							fmt.Printf("✔ Saved: %s\n", absPath)
-						}
-						_ = history.Add(history.Entry{
-							ID:        a.ID,
-							Type:      "video",
-							Prompt:    prompt,
-							LocalPath: savedPath,
-							URL:       a.URL,
-							Aspect:    vidAspect,
-						})
-					}
-				}
-
-				if jsonOutput {
-					data, _ := json.MarshalIndent(assets, "", "  ")
-					fmt.Println(string(data))
-				}
-				return nil
-			}
-
-			if !jsonOutput {
-				fmt.Print(".")
-			}
+		prov := getProvider()
+		switch prov {
+		case "minimax":
+			return runMiniMaxVideo(cmd, prompt)
+		case "flow":
+			return runFlowVideo(cmd, prompt)
+		default:
+			return runGeminiVideo(cmd, prompt)
 		}
 	},
+}
+
+func runGeminiVideo(cmd *cobra.Command, prompt string) error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
+	defer cancel()
+
+	cli, err := gemini.NewClient(ctx, false)
+	if err != nil {
+		return fmt.Errorf("gemini client error: %w", err)
+	}
+
+	fmt.Fprintf(os.Stderr, "Generating video via Gemini (Veo): %q...\n", prompt)
+	res, err := cli.Generate(ctx, "Generate a video of: "+prompt)
+	if err != nil {
+		return err
+	}
+
+	if res.VideoURL == "" {
+		if res.Text != "" {
+			return fmt.Errorf("gemini response: %s", res.Text)
+		}
+		return errors.New("no video URL returned by Gemini")
+	}
+
+	cfg := config.LoadConfig()
+	outBase := vidOutput
+	if outBase == "" {
+		outBase = cfg.OutputDir
+	}
+
+	fmt.Fprintf(os.Stderr, "Downloading generated video...\n")
+	savedPath, err := cli.DownloadMedia(ctx, res.VideoURL, outBase)
+	if err != nil {
+		return fmt.Errorf("failed downloading video: %w", err)
+	}
+
+	absPath, _ := filepath.Abs(savedPath)
+	fmt.Fprintf(os.Stderr, "Saved: %s\n", absPath)
+
+	asset := models.Asset{
+		ID:        fmt.Sprintf("gemini_vid_%s", time.Now().Format("150405")),
+		Type:      "video",
+		Prompt:    prompt,
+		LocalPath: savedPath,
+		URL:       res.VideoURL,
+		MimeType:  "video/mp4",
+	}
+
+	_ = history.Add(history.Entry{
+		ID:        asset.ID,
+		Type:      "video",
+		Prompt:    prompt,
+		LocalPath: savedPath,
+		URL:       res.VideoURL,
+		Aspect:    vidAspect,
+		Model:     "Veo",
+	})
+
+	if jsonOutput {
+		data, _ := json.MarshalIndent([]models.Asset{asset}, "", "  ")
+		fmt.Println(string(data))
+	}
+
+	return nil
+}
+
+func runMiniMaxVideo(cmd *cobra.Command, prompt string) error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
+	defer cancel()
+
+	client, err := minimax.NewClient(ctx)
+	if err != nil {
+		return fmt.Errorf("minimax client error: %w", err)
+	}
+
+	res := vidResolution
+	if res == "" || res == "720p" {
+		res = "768P"
+	} else if res == "1080p" {
+		res = "2K"
+	}
+
+	aspect := vidAspect
+	if aspect == "" || aspect == "landscape" {
+		aspect = "16:9"
+	} else if aspect == "portrait" {
+		aspect = "9:16"
+	} else if aspect == "square" {
+		aspect = "1:1"
+	}
+
+	dur := vidDuration
+	if dur <= 0 {
+		dur = 4
+	}
+
+	fmt.Fprintf(os.Stderr, "Submitting video to MiniMax H3 [%s, %ds, %s]...\n", aspect, dur, res)
+	taskID, err := client.GenerateVideo(ctx, prompt, res, dur, aspect)
+	if err != nil {
+		return fmt.Errorf("minimax submit failed: %w", err)
+	}
+
+	fmt.Fprintf(os.Stderr, "Job submitted: %s\nRendering video...\n", taskID)
+	dlURL, err := client.WaitForVideo(ctx, taskID, 12*time.Minute)
+	if err != nil {
+		return err
+	}
+
+	cfg := config.LoadConfig()
+	outBase := vidOutput
+	if outBase == "" {
+		outBase = cfg.OutputDir
+	}
+
+	savedPath, err := client.DownloadFile(ctx, dlURL, outBase)
+	if err != nil {
+		return fmt.Errorf("failed downloading video from %s: %w", dlURL, err)
+	}
+
+	absPath, _ := filepath.Abs(savedPath)
+	fmt.Fprintf(os.Stderr, "Saved: %s\n", absPath)
+
+	asset := models.Asset{
+		ID:        taskID,
+		Type:      "video",
+		Prompt:    prompt,
+		LocalPath: savedPath,
+		URL:       dlURL,
+		MimeType:  "video/mp4",
+	}
+
+	_ = history.Add(history.Entry{
+		ID:        taskID,
+		Type:      "video",
+		Prompt:    prompt,
+		LocalPath: savedPath,
+		URL:       dlURL,
+		Aspect:    aspect,
+		Model:     "MiniMax H3",
+	})
+
+	if jsonOutput {
+		data, _ := json.MarshalIndent([]models.Asset{asset}, "", "  ")
+		fmt.Println(string(data))
+	}
+
+	return nil
+}
+
+func runFlowVideo(cmd *cobra.Command, prompt string) error {
+	cfg := config.LoadConfig()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
+	defer cancel()
+
+	aspect, err := config.ResolveVideoAspect(vidAspect)
+	if err != nil {
+		return err
+	}
+
+	var seedPtr *int64
+	if cmd.Flags().Changed("seed") {
+		if vidSeed < 0 || vidSeed > models.MaxSeed {
+			return fmt.Errorf("seed must be in [0,%d]", models.MaxSeed)
+		}
+		seedPtr = &vidSeed
+	}
+
+	dur := vidDuration
+	if dur <= 0 {
+		dur = 10
+	}
+
+	outBase := vidOutput
+	if outBase == "" {
+		outBase = cfg.OutputDir
+	}
+
+	// 1. Try extension-free direct CDP connection first
+	flowBridge := cdp.NewFlowBridge(cfg.CDPPort)
+	if _, err := flowBridge.EnsureConnected(ctx); err == nil {
+		fmt.Fprintf(os.Stderr, "Connected to Google Flow tab via CDP (extension-free, port %d)...\n", cfg.CDPPort)
+		defer flowBridge.Close()
+		fc := client.NewFlowClientWithExecutor(cfg, flowBridge)
+
+		fmt.Fprintf(os.Stderr, "Submitting video to Google Flow [%s, %ds]...\n", aspect, dur)
+		mediaIDs, err := fc.GenerateVideo(ctx, prompt, aspect, dur, "", vidStart, vidEnd, seedPtr)
+		if err != nil {
+			return fmt.Errorf("flow submit failed: %w", err)
+		}
+
+		fmt.Fprintf(os.Stderr, "Job submitted: %s\nRendering video...\n", mediaIDs[0])
+		assets, err := fc.WaitForVideo(ctx, mediaIDs, 15*time.Minute)
+		if err != nil {
+			return fmt.Errorf("flow rendering failed: %w", err)
+		}
+
+		if vidResolution == "1080p" || vidResolution == "4k" {
+			fmt.Fprintf(os.Stderr, "Upsampling video to %s...\n", vidResolution)
+			upIDs, err := fc.UpsampleVideo(ctx, assets[0].ID, aspect, vidResolution, seedPtr)
+			if err == nil && len(upIDs) > 0 {
+				upAssets, err := fc.WaitForVideo(ctx, upIDs, 10*time.Minute)
+				if err == nil && len(upAssets) > 0 {
+					assets = upAssets
+				}
+			}
+		}
+
+		return saveFlowAssets(ctx, assets, prompt, aspect, "Veo 3.1", outBase)
+	}
+
+	// 2. Fall back to daemon/bridge route if running
+	if err := daemon.EnsureRunningWithAuth(cfg.Host, cfg.Port, cfg.APIToken); err != nil {
+		return fmt.Errorf("could not connect to Flow. Either start Chrome with '--remote-debugging-port=9222' on flow.google.com (extension-free), or start the background server: %w", err)
+	}
+	rc := remote.New(cfg.Host, cfg.Port, cfg.APIToken)
+	rc.PollTimeout = 25 * time.Minute
+	if err := rc.Probe(ctx); err != nil {
+		return err
+	}
+	status, err := rc.DetailedStatus(ctx)
+	if err != nil {
+		return err
+	}
+	if connected, _ := status["extension_connected"].(bool); !connected {
+		return fmt.Errorf("Chrome extension not connected. Run 'gflow setup' and open https://labs.google/fx/tools/flow, or launch Chrome with '--remote-debugging-port=9222'")
+	}
+	if hasToken, _ := status["has_flow_key"].(bool); !hasToken {
+		return fmt.Errorf("Google Flow session not ready. Open https://labs.google/fx/tools/flow in Chrome")
+	}
+
+	startID, err := resolveFrame(ctx, rc, vidStart, "start")
+	if err != nil {
+		return err
+	}
+	endID, err := resolveFrame(ctx, rc, vidEnd, "end")
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintf(os.Stderr, "Submitting video generation to Flow daemon [%s, %ds]...\n", aspect, dur)
+	sub, err := rc.SubmitVideo(ctx, models.VideoSubmitRequest{
+		Prompt: prompt, Aspect: aspect, Duration: dur,
+		StartImage: startID, EndImage: endID, Seed: seedPtr,
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(os.Stderr, "Job submitted: %s\nRendering video...\n", sub.JobID)
+	st, err := waitWithProgress(ctx, rc, sub.JobID)
+	if err != nil {
+		return err
+	}
+	if st.Status == "failed" {
+		msg := ""
+		if st.Error != nil {
+			msg = st.Error.Message
+		}
+		return fmt.Errorf("video generation failed: %s", msg)
+	}
+	assets := st.Assets
+
+	if vidResolution == "1080p" || vidResolution == "4k" {
+		fmt.Fprintf(os.Stderr, "Upsampling to %s...\n", vidResolution)
+		upAssets, err := triggerRemoteUpsample(ctx, rc, assets[0].ID, aspect, vidResolution, seedPtr)
+		if err != nil {
+			return fmt.Errorf("native video %s ready but upsample failed: %w", assets[0].ID, err)
+		}
+		assets = upAssets
+	}
+
+	return saveFlowAssets(ctx, assets, prompt, aspect, "Veo 3.1", outBase)
 }
 
 func init() {
 	videoCmd.Flags().StringVarP(&vidAspect, "aspect", "a", "landscape", "Aspect ratio: landscape, portrait, square")
 	videoCmd.Flags().IntVarP(&vidDuration, "duration", "d", 10, "Duration in seconds: 4, 6, 8, 10")
-	videoCmd.Flags().StringVarP(&vidResolution, "resolution", "r", "720p", "Resolution: 720p, 1080p, 4k")
+	videoCmd.Flags().StringVarP(&vidResolution, "resolution", "r", "720p", "Resolution: 720p, 1080p, 4k (Flow); 768P, 2K (MiniMax)")
 	videoCmd.Flags().StringVarP(&vidOutput, "output", "o", "", "Output directory or filename")
-	videoCmd.Flags().StringVar(&vidStart, "start", "", "Start frame image path or media ID")
-	videoCmd.Flags().StringVar(&vidEnd, "end", "", "End frame image path or media ID")
+	videoCmd.Flags().StringVar(&vidStart, "start", "", "Start frame image path or media ID (Flow)")
+	videoCmd.Flags().StringVar(&vidEnd, "end", "", "End frame image path or media ID (Flow)")
 	videoCmd.Flags().Int64Var(&vidSeed, "seed", 0, "Seed for reproducible generation")
 }
 
-func triggerRemoteUpsample(cfg *config.Config, mediaID, aspect, resolution string) ([]models.Asset, error) {
-	reqBody, _ := json.Marshal(map[string]string{
-		"media_id":   mediaID,
-		"aspect":     aspect,
-		"resolution": resolution,
-	})
-	url := fmt.Sprintf("http://%s:%d/v1/videos/upsample", cfg.Host, cfg.Port)
-	resp, err := http.Post(url, "application/json", bytes.NewReader(reqBody))
+func resolveFrame(ctx context.Context, rc *remote.Client, val, name string) (string, error) {
+	if val == "" {
+		return "", nil
+	}
+	path, mid, err := resolveReference(val)
+	if err != nil {
+		return "", fmt.Errorf("invalid %s frame: %w", name, err)
+	}
+	if path != "" {
+		mid, err = rc.UploadFile(ctx, path)
+		if err != nil {
+			return "", fmt.Errorf("failed to upload %s frame: %w", name, err)
+		}
+	}
+	return mid, nil
+}
+
+func waitWithProgress(ctx context.Context, rc *remote.Client, jobID string) (models.JobStatus, error) {
+	deadline := time.Now().Add(rc.PollTimeout)
+	timer := time.NewTimer(0)
+	defer timer.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return models.JobStatus{}, ctx.Err()
+		case <-timer.C:
+		}
+		if time.Now().After(deadline) {
+			return models.JobStatus{}, fmt.Errorf("timed out waiting for %s", jobID)
+		}
+		st, err := rc.CheckOnce(ctx, jobID)
+		if err != nil {
+			timer.Reset(rc.PollEvery)
+			continue
+		}
+		if st.Status == "processing" {
+			if !jsonOutput {
+				fmt.Fprint(os.Stderr, ".")
+			}
+			timer.Reset(rc.PollEvery)
+			continue
+		}
+		if !jsonOutput {
+			fmt.Fprint(os.Stderr, "\n")
+		}
+		return st, nil
+	}
+}
+
+func triggerRemoteUpsample(ctx context.Context, rc *remote.Client, mediaID, aspect, resolution string, seed *int64) ([]models.Asset, error) {
+	sub, err := rc.Upsample(ctx, mediaID, aspect, resolution, seed)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("upsample request failed (%d): %s", resp.StatusCode, string(b))
+	st, err := waitWithProgress(ctx, rc, sub.JobID)
+	if err != nil {
+		return nil, fmt.Errorf("source %s retained; upsample wait failed: %w", mediaID, err)
 	}
-
-	var res struct {
-		JobID string `json:"job_id"`
+	if st.Status == "failed" {
+		msg := ""
+		if st.Error != nil {
+			msg = st.Error.Message
+		}
+		return nil, fmt.Errorf("upsample failed for source %s: %s", mediaID, msg)
 	}
-	_ = json.NewDecoder(resp.Body).Decode(&res)
-
-	pollURL := fmt.Sprintf("http://%s:%d/v1/videos/generations/%s", cfg.Host, cfg.Port, res.JobID)
-	client := &http.Client{Timeout: 35 * time.Second}
-
-	for {
-		time.Sleep(5 * time.Second)
-		pollResp, err := client.Get(pollURL)
-		if err != nil {
-			continue
-		}
-
-		var pollResult struct {
-			JobID  string         `json:"job_id"`
-			Status string         `json:"status"`
-			Assets []models.Asset `json:"assets"`
-		}
-		_ = json.NewDecoder(pollResp.Body).Decode(&pollResult)
-		pollResp.Body.Close()
-
-		if pollResult.Status == "succeeded" && len(pollResult.Assets) > 0 {
-			return pollResult.Assets, nil
-		}
-		fmt.Print(".")
-	}
+	return st.Assets, nil
 }
 
 func fileExists(path string) bool {

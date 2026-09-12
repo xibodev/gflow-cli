@@ -27,3 +27,7 @@ Thumbs.db
 # Go test cache and coverage
 *.out
 *.test
+
+# Generated local extension config (contains bridge token; created by gflow setup)
+bridge-config.js
+**/bridge-config.js

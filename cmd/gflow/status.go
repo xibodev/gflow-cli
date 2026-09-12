@@ -1,64 +1,76 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"time"
 
-	"github.com/xibodev/gflow-cli/pkg/config"
 	"github.com/spf13/cobra"
+	"github.com/xibodev/gflow-cli/pkg/config"
+	"github.com/xibodev/gflow-cli/pkg/gemini"
+	"github.com/xibodev/gflow-cli/pkg/minimax"
+	"github.com/xibodev/gflow-cli/pkg/remote"
 )
 
 var statusCmd = &cobra.Command{
 	Use:   "status",
-	Short: "Check bridge connection and Google Flow auth status",
+	Short: "Check status of configured AI providers (Gemini, MiniMax, Flow)",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg := config.LoadConfig()
-		healthURL := fmt.Sprintf("http://%s:%d/health", cfg.Host, cfg.Port)
+		statusData := make(map[string]any)
 
-		client := &http.Client{Timeout: 3 * time.Second}
-		resp, err := client.Get(healthURL)
-		if err != nil {
-			if jsonOutput {
-				data, _ := json.Marshal(map[string]any{
-					"status": "server_not_running",
-					"error":  err.Error(),
-				})
-				fmt.Println(string(data))
-			} else {
-				fmt.Println("Status: Server is not running.")
-				fmt.Printf("Run 'gflow setup' or any generation command to start it automatically.\n")
-			}
-			return nil
+		// 1. Gemini Provider Status
+		geminiExe, geminiExeErr := gemini.FindGeminiExecutable()
+		geminiSess, geminiSessErr := gemini.LoadSession()
+		geminiReady := geminiSessErr == nil && geminiSess != nil && geminiSess.At != ""
+		statusData["gemini"] = map[string]any{
+			"app_installed": geminiExeErr == nil,
+			"session_ready": geminiReady,
+			"session_age":   time.Since(geminiSess.UpdatedAt).Round(time.Minute).String(),
 		}
-		defer resp.Body.Close()
 
-		var health map[string]any
-		_ = json.NewDecoder(resp.Body).Decode(&health)
+		// 2. MiniMax Provider Status
+		mmSess, mmErr := minimax.LoadSession()
+		minimaxReady := mmErr == nil && mmSess != nil && mmSess.AccessToken != ""
+		statusData["minimax"] = map[string]any{
+			"session_ready": minimaxReady,
+			"has_device_id": mmSess != nil && mmSess.DeviceID != "",
+		}
+
+		// 3. Flow Provider Status
+		cfg := config.LoadConfig()
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		rc := remote.New(cfg.Host, cfg.Port, cfg.APIToken)
+		flowRunning := rc.Probe(ctx) == nil
+		statusData["flow"] = map[string]any{
+			"daemon_running": flowRunning,
+		}
 
 		if jsonOutput {
-			data, _ := json.MarshalIndent(health, "", "  ")
+			data, _ := json.MarshalIndent(statusData, "", "  ")
 			fmt.Println(string(data))
 			return nil
 		}
 
-		connected, _ := health["extension_connected"].(bool)
-		hasToken, _ := health["has_flow_key"].(bool)
-		sessions, _ := health["active_sessions"].(float64)
+		fmt.Println("=== AI Providers Status ===")
+		fmt.Println()
 
-		fmt.Printf("Server:             Running on http://%s:%d\n", cfg.Host, cfg.Port)
-		fmt.Printf("Extension Status:   %s\n", formatBool(connected, "Connected", "Not Connected"))
-		fmt.Printf("Google Flow Token:  %s\n", formatBool(hasToken, "Captured / Ready", "Missing (Open Flow)"))
-		fmt.Printf("Active Workers:     %d\n", int(sessions))
-		fmt.Printf("Overall Health:     %v\n", health["status"])
+		// Gemini
+		fmt.Println("[Gemini] (Default — Extension-Free: Imagen 3, Veo, Audio, Chat)")
+		fmt.Printf("  App Installed:    %s\n", formatBool(geminiExeErr == nil, "Found ("+geminiExe+")", "Not Found"))
+		fmt.Printf("  Session State:    %s\n", formatBool(geminiReady, fmt.Sprintf("Ready (Updated %s ago)", time.Since(geminiSess.UpdatedAt).Round(time.Minute)), "Missing (Run 'gflow chat' or open Gemini app once)"))
+		fmt.Println()
 
-		if !connected || !hasToken {
-			fmt.Println()
-			fmt.Println("Need to connect?")
-			fmt.Println("1. Run 'gflow setup' to install the Chrome extension.")
-			fmt.Println("2. Open https://labs.google/fx/tools/flow in Chrome.")
-		}
+		// MiniMax
+		fmt.Println("[MiniMax Design] (Direct Cloud — H3 Video)")
+		fmt.Printf("  Session State:    %s\n", formatBool(minimaxReady, "Ready (Captured from Desktop app)", "Missing"))
+		fmt.Println()
+
+		// Flow
+		fmt.Println("[Google Flow] (Legacy / Daemon)")
+		fmt.Printf("  Daemon Running:   %s\n", formatBool(flowRunning, fmt.Sprintf("http://%s:%d", cfg.Host, cfg.Port), "Stopped"))
+		fmt.Println()
 
 		return nil
 	},

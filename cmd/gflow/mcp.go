@@ -1,24 +1,34 @@
 package main
 
 import (
-	"github.com/xibodev/gflow-cli/pkg/bridge"
-	"github.com/xibodev/gflow-cli/pkg/client"
-	"github.com/xibodev/gflow-cli/pkg/config"
-	"github.com/xibodev/gflow-cli/pkg/mcp"
 	"github.com/spf13/cobra"
+	"github.com/xibodev/gflow-cli/pkg/config"
+	"github.com/xibodev/gflow-cli/pkg/daemon"
+	"github.com/xibodev/gflow-cli/pkg/mcp"
+	"github.com/xibodev/gflow-cli/pkg/remote"
 )
 
 var mcpCmd = &cobra.Command{
 	Use:   "mcp",
 	Short: "Start the Model Context Protocol (MCP) server over stdio",
 	Long: `Starts an MCP stdio server compatible with Claude Desktop, Cursor, OpenCode, Cline, and Windsurf.
-Provides native generation tools for AI assistants.`,
+The MCP server is a client of the local gflow daemon; it never owns extension sessions directly.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg := config.LoadConfig()
-		br := bridge.NewExtensionBridge()
-		fc := client.NewFlowClient(cfg, br)
+		prov := getProvider()
 
-		srv := mcp.NewServer(fc)
+		if prov == "gemini" {
+			srv := mcp.NewServerGemini(cfg)
+			return srv.Run()
+		}
+
+		// Flow / daemon mode:
+		// Stdout must carry only JSON-RPC; EnsureRunning is silent on success.
+		if err := daemon.EnsureRunningWithAuth(cfg.Host, cfg.Port, cfg.APIToken); err != nil {
+			return err
+		}
+		rc := remote.New(cfg.Host, cfg.Port, cfg.APIToken)
+		srv := mcp.NewServerRemote(rc, cfg)
 		return srv.Run()
 	},
 }
