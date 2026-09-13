@@ -1,0 +1,12 @@
+:root {
+  --gflow-color-supersonic-cyan: #00e5ff;
+  --gflow-color-accessible-cyan-dark: #007c91;
+  --gflow-color-cockpit-obsidian: #080b10;
+  --gflow-color-signal-white: #ffffff;
+  --gflow-mark-ribbon-stroke-width: 7;
+  --gflow-mark-accent-stroke-width: 3;
+  --gflow-mark-endpoint-radius: 4.5;
+  --gflow-mark-minimum-screen-size: 24px;
+  --gflow-wordmark-font-family: "Public Sans", Arial, sans-serif;
+  --gflow-wordmark-font-weight: 800;
+}

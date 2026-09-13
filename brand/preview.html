@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>gflow-cli Brand Kit</title>
+  <link rel="stylesheet" href="./tokens.css">
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: #f4f7f8;
+      color: var(--gflow-color-cockpit-obsidian);
+      font-family: var(--gflow-wordmark-font-family);
+    }
+    header {
+      background: var(--gflow-color-cockpit-obsidian);
+      color: var(--gflow-color-signal-white);
+      padding: 44px clamp(24px, 7vw, 96px);
+    }
+    header img { display: block; width: min(360px, 100%); }
+    header p { margin: 22px 0 0; color: #b5c3ce; line-height: 1.6; }
+    main { width: min(1120px, calc(100% - 48px)); margin: 48px auto 72px; }
+    section { margin-top: 48px; }
+    h1, h2, p { margin-top: 0; }
+    h1 { margin: 0; font-size: .75rem; font-weight: 500; letter-spacing: .02em; }
+    h2 { margin-bottom: 18px; font-size: 1.5rem; }
+    code { font-family: Consolas, monospace; font-size: .9em; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+    .panel {
+      min-height: 220px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 38px;
+      background: #ffffff;
+      border: 1px solid #dce4e8;
+    }
+    .panel.dark { background: var(--gflow-color-cockpit-obsidian); border-color: var(--gflow-color-cockpit-obsidian); }
+    .panel img { display: block; width: min(360px, 100%); max-height: 142px; }
+    .panel.mark img { width: 126px; height: 126px; }
+    .caption { margin: 12px 0 0; color: #52626d; font: 12px/1.5 Consolas, monospace; }
+    .swatches { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid #dce4e8; }
+    .swatch { min-height: 150px; padding: 20px; display: flex; flex-direction: column; justify-content: flex-end; }
+    .swatch strong, .swatch code { display: block; }
+    .swatch code { margin-top: 5px; }
+    .cyan { background: #00e5ff; }
+    .cyan-dark { background: #007c91; color: #ffffff; }
+    .obsidian { background: #080b10; color: #ffffff; }
+    .white { background: #ffffff; }
+    .icons { display: flex; flex-wrap: wrap; gap: 24px; align-items: end; }
+    .icon-item { width: 132px; }
+    .icon-item img { display: block; width: 100%; height: auto; }
+    .og { display: block; width: 100%; height: auto; border: 1px solid #dce4e8; }
+    @media (max-width: 720px) {
+      .grid { grid-template-columns: 1fr; }
+      .swatches { grid-template-columns: repeat(2, 1fr); }
+      main { width: min(100% - 32px, 1120px); margin-top: 32px; }
+      .panel { min-height: 180px; padding: 28px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Approved identity / gflow-cli</h1>
+    <img src="./logos/lockup-inverse.svg" alt="gflow-cli" width="360" height="100">
+    <p>Formal name <strong>gflow-cli</strong>. Command <code>gflow</code>. Mark <strong>Supersonic Stream Ribbons</strong>.</p>
+  </header>
+  <main>
+    <section>
+      <h2>Primary Lockups</h2>
+      <div class="grid">
+        <div>
+          <div class="panel"><img src="./logos/lockup.svg" alt="gflow-cli light-surface lockup"></div>
+          <p class="caption">logos/lockup.svg</p>
+        </div>
+        <div>
+          <div class="panel dark"><img src="./logos/lockup-inverse.svg" alt="gflow-cli dark-surface lockup"></div>
+          <p class="caption">logos/lockup-inverse.svg</p>
+        </div>
+      </div>
+    </section>
+    <section>
+      <h2>Marks</h2>
+      <div class="grid">
+        <div>
+          <div class="panel mark"><img src="./logos/mark.svg" alt="Supersonic Stream Ribbons light-surface mark"></div>
+          <p class="caption">logos/mark.svg</p>
+        </div>
+        <div>
+          <div class="panel mark dark"><img src="./logos/mark-inverse.svg" alt="Supersonic Stream Ribbons dark-surface mark"></div>
+          <p class="caption">logos/mark-inverse.svg</p>
+        </div>
+      </div>
+    </section>
+    <section>
+      <h2>Wordmarks</h2>
+      <div class="grid">
+        <div>
+          <div class="panel"><img src="./logos/wordmark.svg" alt="gflow-cli light-surface wordmark"></div>
+          <p class="caption">logos/wordmark.svg</p>
+        </div>
+        <div>
+          <div class="panel dark"><img src="./logos/wordmark-inverse.svg" alt="gflow-cli dark-surface wordmark"></div>
+          <p class="caption">logos/wordmark-inverse.svg</p>
+        </div>
+      </div>
+    </section>
+    <section>
+      <h2>Color Tokens</h2>
+      <div class="swatches">
+        <div class="swatch cyan"><strong>Supersonic Cyan</strong><code>#00E5FF</code></div>
+        <div class="swatch cyan-dark"><strong>Accessible Cyan Dark</strong><code>#007C91</code></div>
+        <div class="swatch obsidian"><strong>Cockpit Obsidian</strong><code>#080B10</code></div>
+        <div class="swatch white"><strong>Signal White</strong><code>#FFFFFF</code></div>
+      </div>
+    </section>
+    <section>
+      <h2>Application Icons</h2>
+      <div class="icons">
+        <div class="icon-item"><img src="./icons/favicon.svg" alt="gflow-cli favicon"><p class="caption">favicon.svg</p></div>
+        <div class="icon-item"><img src="./icons/app-icon.svg" alt="gflow-cli app icon"><p class="caption">app-icon.svg</p></div>
+        <div class="icon-item"><img src="./icons/icon-192.svg" alt="gflow-cli 192 pixel icon"><p class="caption">icon-192.svg</p></div>
+        <div class="icon-item"><img src="./icons/icon-512.svg" alt="gflow-cli 512 pixel icon"><p class="caption">icon-512.svg</p></div>
+      </div>
+    </section>
+    <section>
+      <h2>Monochrome</h2>
+      <div class="grid">
+        <div><div class="panel mark"><img src="./logos/mono-black.svg" alt="Monochrome black mark"></div><p class="caption">logos/mono-black.svg</p></div>
+        <div><div class="panel mark dark"><img src="./logos/mono-white.svg" alt="Monochrome white mark"></div><p class="caption">logos/mono-white.svg</p></div>
+      </div>
+    </section>
+    <section>
+      <h2>Default Social Image</h2>
+      <img class="og" src="./og/og-default.png" alt="gflow-cli default social image" width="1200" height="630">
+      <p class="caption">og/og-default.png, generated from og/og-default.svg / 1200 x 630</p>
+    </section>
+  </main>
+</body>
+</html>

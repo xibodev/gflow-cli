@@ -5,7 +5,7 @@
 [![Google Flow](https://img.shields.io/badge/Google_Flow-Imagen_4_&_Veo_3.1-4285F4?logo=google)](https://labs.google/fx/tools/flow)
 [![MCP v2](https://img.shields.io/badge/MCP_v2-Supported-7057ff)](https://modelcontextprotocol.io)
 
-**gflow** is a single-binary CLI and Model Context Protocol (MCP) server for generative media: image, video, audio, and chat.
+**gflow-cli** is a single-binary CLI and Model Context Protocol (MCP) server for generative media: image, video, audio, and chat. Its executable/CLI command is `gflow`.
 
 - **Image Generation:** Gemini Imagen 3 and Google Flow Imagen 4 (Pro and Lite models).
 - **Video Generation:** Gemini Veo, MiniMax H3 (768P and 2K), and Google Flow Veo 3.1.
@@ -190,7 +190,7 @@ TIME         TYPE   ID            PROMPT                                LOCAL PA
 
 ## Model Context Protocol (MCP)
 
-**gflow** includes a native stdio MCP server for AI coding assistants and desktop agents:
+**gflow-cli** includes a native stdio MCP server for AI coding assistants and desktop agents through its `gflow` executable/CLI command:
 
 ### Claude Desktop
 Add to your `claude_desktop_config.json`:
@@ -283,7 +283,7 @@ Google Flow secures generative APIs with **reCAPTCHA Enterprise v3**.
 Headless browsers and fresh automation profiles often score poorly, causing
 Google to return `403 Forbidden`.
 
-`gflow` uses a two-tier architecture:
+The **gflow-cli** project's `gflow` executable/CLI command uses a two-tier architecture:
 1. **Lightweight Extension Bridge**: Runs inside your everyday, logged-in
    browser session on `labs.google/fx/tools/flow`.
 2. **Authentic reCAPTCHA Execution**: When a generation command is issued,

@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">gflow-cli</title>
+  <desc id="desc">Generative media in your terminal with a Go CLI and MCP server for Gemini, MiniMax, and Google Flow.</desc>
+  <defs>
+    <pattern id="grid" width="42" height="42" patternUnits="userSpaceOnUse">
+      <path d="M42 0H0V42" fill="none" stroke="#FFFFFF" stroke-opacity="0.045" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="630" fill="#080B10"/>
+  <rect width="1200" height="630" fill="url(#grid)"/>
+  <path d="M0 1 H1200" stroke="#00E5FF" stroke-width="2"/>
+  <g transform="translate(58 131) scale(3.7)">
+    <circle cx="50" cy="38" r="16" fill="none" stroke="#00E5FF" stroke-width="7"/>
+    <path d="M66 38 L66 64 C66 76 54 82 40 82 C28 82 22 74 22 66" fill="none" stroke="#00E5FF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M50 22 C58 22 66 30 66 38" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="66" cy="38" r="4.5" fill="#FFFFFF"/>
+  </g>
+  <path d="M474 104 V526" stroke="#FFFFFF" stroke-opacity="0.16"/>
+  <text x="538" y="205" fill="#FFFFFF" font-family="Public Sans, Arial, sans-serif" font-size="76" font-weight="800" letter-spacing="-2.5">gflow-cli</text>
+  <text x="540" y="278" fill="#FFFFFF" font-family="Public Sans, Arial, sans-serif" font-size="34" font-weight="600">Generative media in your terminal.</text>
+  <text x="540" y="330" fill="#AAB7C4" font-family="Public Sans, Arial, sans-serif" font-size="23">Single-binary Go CLI + stdio MCP server</text>
+  <text x="540" y="372" fill="#AAB7C4" font-family="Public Sans, Arial, sans-serif" font-size="23">Gemini / MiniMax / Google Flow</text>
+  <g fill="#00E5FF" font-family="JetBrains Mono, Consolas, monospace" font-size="20" font-weight="600">
+    <text x="540" y="456">gflow image</text>
+    <text x="704" y="456">gflow video</text>
+    <text x="868" y="456">gflow audio</text>
+    <text x="1030" y="456">gflow chat</text>
+  </g>
+  <text x="540" y="528" fill="#7F8D99" font-family="JetBrains Mono, Consolas, monospace" font-size="18">github.com/xibodev/gflow-cli</text>
+</svg>

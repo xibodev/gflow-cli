@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 100 100" role="img" aria-labelledby="title">
+  <title id="title">gflow-cli 192 pixel icon</title>
+  <rect width="100" height="100" rx="18" fill="#080B10"/>
+  <circle cx="50" cy="38" r="16" fill="none" stroke="#00E5FF" stroke-width="7"/>
+  <path d="M66 38 L66 64 C66 76 54 82 40 82 C28 82 22 74 22 66" fill="none" stroke="#00E5FF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M50 22 C58 22 66 30 66 38" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="66" cy="38" r="4.5" fill="#FFFFFF"/>
+</svg>
