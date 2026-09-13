@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "identity": {
+    "formalName": "gflow-cli",
+    "command": "gflow",
+    "markName": "Supersonic Stream Ribbons",
+    "status": "approved"
+  },
+  "source": {
+    "type": "approved-identity-brief",
+    "owner": "xibodev",
+    "repository": "https://github.com/xibodev/gflow-cli"
+  },
+  "canonical": {
+    "guidelines": "BRAND.md",
+    "tokens": [
+      "tokens.json",
+      "tokens.css"
+    ],
+    "logos": [
+      "logos/mark.svg",
+      "logos/mark-inverse.svg",
+      "logos/lockup.svg",
+      "logos/lockup-inverse.svg",
+      "logos/wordmark.svg",
+      "logos/wordmark-inverse.svg",
+      "logos/mono-black.svg",
+      "logos/mono-white.svg"
+    ],
+    "icons": [
+      "icons/favicon.svg",
+      "icons/app-icon.svg",
+      "icons/icon-192.svg",
+      "icons/icon-512.svg"
+    ],
+    "social": [
+      "og/og-default.svg",
+      "og/og-default.png"
+    ]
+  },
+  "derivations": [
+    {
+      "source": "og/og-default.svg",
+      "target": "og/og-default.png",
+      "tool": "sharp-cli",
+      "version": "5.2.0",
+      "command": "npx --yes sharp-cli@5.2.0 -i brand/og/og-default.svg -o brand/og/og-default.png -f png -c 9",
+      "width": 1200,
+      "height": 630
+    }
+  ],
+  "projections": [
+    {
+      "source": "icons/favicon.svg",
+      "target": "../docs/favicon.svg"
+    },
+    {
+      "source": "logos/mark.svg",
+      "target": "../docs/logo-mark.svg"
+    },
+    {
+      "source": "og/og-default.svg",
+      "target": "../docs/og-default.svg"
+    },
+    {
+      "source": "og/og-default.png",
+      "target": "../docs/og-default.png"
+    }
+  ]
+}

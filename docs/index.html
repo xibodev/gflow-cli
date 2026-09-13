@@ -3,8 +3,26 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>gflow: AI Media CLI & MCP Server</title>
+  <title>gflow-cli: AI Media CLI & MCP Server</title>
   <meta name="description" content="Single-binary Go CLI and stdio MCP server for image, video, audio, and chat generation across Gemini, MiniMax, and Google Flow.">
+  <meta name="theme-color" content="#080B10">
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <link rel="canonical" href="https://xibodev.github.io/gflow-cli/">
+
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="gflow-cli: AI Media CLI & MCP Server">
+  <meta property="og:description" content="Single-binary Go CLI and stdio MCP server for image, video, audio, and chat generation across Gemini, MiniMax, and Google Flow.">
+  <meta property="og:url" content="https://xibodev.github.io/gflow-cli/">
+  <meta property="og:image" content="https://xibodev.github.io/gflow-cli/og-default.png">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="gflow-cli: generative media in your terminal">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="gflow-cli: AI Media CLI & MCP Server">
+  <meta name="twitter:description" content="Single-binary Go CLI and stdio MCP server for image, video, audio, and chat generation across Gemini, MiniMax, and Google Flow.">
+  <meta name="twitter:image" content="https://xibodev.github.io/gflow-cli/og-default.png">
+  <meta name="twitter:image:alt" content="gflow-cli: generative media in your terminal">
 
   <!-- Public Sans & JetBrains Mono -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -28,6 +46,11 @@
             paper: '#ffffff',
             canvas: '#f8fafc',
             terminal: '#090d16',
+            brand: {
+              cyan: '#00E5FF',
+              accessible: '#007C91',
+              obsidian: '#080B10',
+            },
           }
         }
       }
@@ -73,12 +96,13 @@
   <!-- Header -->
   <header class="sticky top-0 z-50 bg-white/95 backdrop-blur-sm line-b">
     <div class="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between text-xs font-mono">
-      <div class="flex items-center gap-3">
-        <a href="#" class="font-bold text-ink text-sm tracking-tight hover:text-slate-600 transition-colors">
-          gflow
+      <div class="flex items-center gap-3 min-w-0">
+        <a href="#" aria-label="gflow-cli home" class="group shrink-0 flex items-center gap-2 rounded-sm font-sans font-bold text-brand-obsidian text-sm tracking-tight hover:text-brand-accessible transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accessible focus-visible:ring-offset-2">
+          <img src="./logo-mark.svg" alt="" width="28" height="28" class="w-7 h-7" aria-hidden="true">
+          <span aria-hidden="true" class="text-[15px] leading-none font-extrabold tracking-[-0.035em]">gflow-cli</span>
         </a>
-        <span class="text-slate-300">/</span>
-        <span class="text-subtle font-medium">v1.1.0</span>
+        <span class="hidden sm:inline text-slate-300">/</span>
+        <span class="hidden sm:inline text-subtle font-medium">v1.1.0</span>
       </div>
 
       <nav class="hidden md:flex items-center gap-6 text-subtle font-sans text-xs">
@@ -113,9 +137,9 @@
       <!-- Install Strip -->
       <div class="max-w-3xl mb-10" id="install">
         <div class="rounded-lg line-border bg-slate-50 overflow-hidden shadow-sm">
-          <div class="flex items-center justify-between px-4 py-2 line-b bg-white text-xs font-mono text-subtle">
+          <div class="flex flex-col items-start gap-2 px-4 py-2 line-b bg-white text-xs font-mono text-subtle sm:flex-row sm:items-center sm:justify-between">
             <span class="font-medium">Installation</span>
-            <div class="flex items-center gap-1.5 text-[11px]">
+            <div class="flex flex-wrap items-center gap-1.5 text-[11px]">
               <button onclick="setTab('ps1')" id="btn-ps1" class="px-2.5 py-1 rounded text-white bg-ink font-medium">PowerShell</button>
               <button onclick="setTab('bash')" id="btn-bash" class="px-2.5 py-1 rounded text-subtle hover:text-ink font-medium">Bash</button>
               <button onclick="setTab('scoop')" id="btn-scoop" class="px-2.5 py-1 rounded text-subtle hover:text-ink font-medium">Scoop</button>
