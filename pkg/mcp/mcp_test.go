@@ -149,8 +149,8 @@ func TestAsyncVideoSubmitAndPoll(t *testing.T) {
 	if err := json.Unmarshal([]byte(text), &submitData); err != nil {
 		t.Fatalf("submit response must be valid JSON: %v, raw: %s", err, text)
 	}
-	if submitData["status"] != "processing" {
-		t.Fatalf("expected status 'processing', got %v", submitData["status"])
+	if submitData["status"] != "queued" && submitData["status"] != "processing" {
+		t.Fatalf("expected status 'queued' or 'processing', got %v", submitData["status"])
 	}
 	jobID, ok := submitData["job_id"].(string)
 	if !ok || jobID == "" {

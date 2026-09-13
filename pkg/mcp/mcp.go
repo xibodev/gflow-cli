@@ -47,16 +47,21 @@ type Error struct {
 // VideoJob tracks asynchronous video generation progress.
 type VideoJob struct {
 	ID          string     `json:"job_id"`
-	Status      string     `json:"status"` // "processing", "completed", "failed"
+	Status      string     `json:"status"` // "queued", "processing", "completed", "failed"
 	Prompt      string     `json:"prompt"`
 	Aspect      string     `json:"aspect"`
 	Duration    int        `json:"duration"`
 	Resolution  string     `json:"resolution"`
 	CreatedAt   time.Time  `json:"created_at"`
+	StartedAt   *time.Time `json:"started_at,omitempty"`
 	CompletedAt *time.Time `json:"completed_at,omitempty"`
 	FilePath    string     `json:"file_path,omitempty"`
 	HasAudio    bool       `json:"has_audio,omitempty"`
 	Error       string     `json:"error,omitempty"`
+
+	seed       *int64
+	startImage string
+	endImage   string
 }
 
 // Server implements an MCP stdio server backed by the local daemon or Gemini.
@@ -72,8 +77,9 @@ type Server struct {
 	cancel map[string]context.CancelFunc
 	wg     sync.WaitGroup
 
-	jobsMu sync.RWMutex
-	jobs   map[string]*VideoJob
+	jobsMu     sync.RWMutex
+	jobs       map[string]*VideoJob
+	videoQueue chan *VideoJob
 
 	HistoryList func(int) ([]history.Entry, error)
 	HistoryAdd  func(history.Entry) error
@@ -81,38 +87,108 @@ type Server struct {
 
 // NewServer creates a server backed by a FlowClient (legacy/tests).
 func NewServer(fc *client.FlowClient) *Server {
-	return &Server{
+	s := &Server{
 		provider:    "flow",
 		flowClient:  fc,
 		cfg:         fc.Config(),
 		cancel:      make(map[string]context.CancelFunc),
 		jobs:        make(map[string]*VideoJob),
+		videoQueue:  make(chan *VideoJob, 100),
 		HistoryList: history.List,
 		HistoryAdd:  history.Add,
 	}
+	go s.startVideoWorker()
+	return s
 }
 
 // NewServerRemote creates a daemon-backed server used by `gflow mcp`.
 func NewServerRemote(r *remote.Client, cfg *config.Config) *Server {
-	return &Server{
-		provider: "flow",
-		remote:   r, cfg: cfg, cancel: make(map[string]context.CancelFunc),
+	s := &Server{
+		provider:    "flow",
+		remote:      r,
+		cfg:         cfg,
+		cancel:      make(map[string]context.CancelFunc),
 		jobs:        make(map[string]*VideoJob),
+		videoQueue:  make(chan *VideoJob, 100),
 		HistoryList: history.List,
 		HistoryAdd:  history.Add,
 	}
+	go s.startVideoWorker()
+	return s
 }
 
 // NewServerGemini creates an extension-free, daemon-free MCP server powered by Gemini.
 func NewServerGemini(cfg *config.Config) *Server {
-	return &Server{
+	s := &Server{
 		provider:    "gemini",
 		cfg:         cfg,
 		cancel:      make(map[string]context.CancelFunc),
 		jobs:        make(map[string]*VideoJob),
+		videoQueue:  make(chan *VideoJob, 100),
 		HistoryList: history.List,
 		HistoryAdd:  history.Add,
 	}
+	go s.startVideoWorker()
+	return s
+}
+
+func (s *Server) startVideoWorker() {
+	defer func() {
+		if r := recover(); r != nil {
+			go s.startVideoWorker()
+		}
+	}()
+
+	for job := range s.videoQueue {
+		s.runSingleVideoJob(job)
+	}
+}
+
+func (s *Server) runSingleVideoJob(job *VideoJob) {
+	defer func() {
+		if r := recover(); r != nil {
+			s.jobsMu.Lock()
+			job.Status = "failed"
+			job.Error = fmt.Sprintf("worker error: %v", r)
+			now := time.Now()
+			job.CompletedAt = &now
+			s.jobsMu.Unlock()
+		}
+	}()
+
+	s.jobsMu.Lock()
+	job.Status = "processing"
+	now := time.Now()
+	job.StartedAt = &now
+	s.jobsMu.Unlock()
+
+	bgCtx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
+
+	assets, outDir, deliveredRes, err := s.generateVideo(bgCtx, job.Prompt, job.Aspect, job.Duration, job.Resolution, job.startImage, job.endImage, job.seed)
+
+	s.jobsMu.Lock()
+	defer s.jobsMu.Unlock()
+	cNow := time.Now()
+	job.CompletedAt = &cNow
+
+	if err != nil {
+		job.Status = "failed"
+		job.Error = err.Error()
+		return
+	}
+
+	saved, _ := s.saveAssets(bgCtx, assets, outDir, "video", job.Prompt, job.Aspect, "")
+	if len(saved) == 0 {
+		job.Status = "failed"
+		job.Error = "generation produced no downloadable assets"
+		return
+	}
+	absPath, _ := filepath.Abs(saved[0])
+	job.Status = "completed"
+	job.FilePath = absPath
+	job.Resolution = deliveredRes
+	job.HasAudio = true
 }
 
 // Run starts the JSON-RPC stdio loop. Stdout carries only JSON-RPC messages.
@@ -168,6 +244,11 @@ func (s *Server) cancelAll() {
 func idKey(id json.RawMessage) string { return string(bytes.TrimSpace(id)) }
 
 func (s *Server) dispatch(line []byte, out io.Writer) {
+	defer func() {
+		if r := recover(); r != nil {
+			s.write(out, &Response{JSONRPC: "2.0", Error: &Error{Code: -32603, Message: fmt.Sprintf("internal error: %v", r)}})
+		}
+	}()
 	var req Request
 	dec := json.NewDecoder(bytes.NewReader(line))
 	dec.UseNumber()
@@ -410,9 +491,17 @@ func (s *Server) executeTool(ctx context.Context, name string, args map[string]a
 				"duration": job.Duration,
 				"aspect":   job.Aspect,
 			}
-			if job.Status == "processing" {
-				res["elapsed_seconds"] = int(time.Since(job.CreatedAt).Seconds())
-				res["message"] = "Video is still generating in background. Continue polling."
+			if job.Status == "queued" {
+				res["message"] = "Video job is queued waiting for active generation to finish. Continue polling."
+			} else if job.Status == "processing" {
+				elapsed := 0
+				if job.StartedAt != nil {
+					elapsed = int(time.Since(*job.StartedAt).Seconds())
+				} else {
+					elapsed = int(time.Since(job.CreatedAt).Seconds())
+				}
+				res["elapsed_seconds"] = elapsed
+				res["message"] = "Video is currently generating in background. Continue polling."
 			} else if job.Status == "completed" {
 				res["file_path"] = job.FilePath
 				res["resolution"] = job.Resolution
@@ -571,51 +660,30 @@ func (s *Server) executeTool(ctx context.Context, name string, args map[string]a
 		jobID := fmt.Sprintf("job_vid_%d", time.Now().UnixNano())
 		job := &VideoJob{
 			ID:         jobID,
-			Status:     "processing",
+			Status:     "queued",
 			Prompt:     prompt,
 			Aspect:     aspect,
 			Duration:   duration,
 			Resolution: res,
 			CreatedAt:  time.Now(),
+			seed:       seed,
+			startImage: start,
+			endImage:   end,
 		}
 		s.jobsMu.Lock()
 		s.jobs[jobID] = job
+		qLen := len(s.videoQueue)
 		s.jobsMu.Unlock()
 
-		go func() {
-			bgCtx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
-			defer cancel()
-
-			assets, outDir, deliveredRes, err := s.generateVideo(bgCtx, prompt, aspect, duration, res, start, end, seed)
-			s.jobsMu.Lock()
-			defer s.jobsMu.Unlock()
-			now := time.Now()
-			job.CompletedAt = &now
-			if err != nil {
-				job.Status = "failed"
-				job.Error = err.Error()
-				return
-			}
-			saved, _ := s.saveAssets(bgCtx, assets, outDir, "video", prompt, aspect, "")
-			if len(saved) == 0 {
-				job.Status = "failed"
-				job.Error = "generation produced no downloadable assets"
-				return
-			}
-			absPath, _ := filepath.Abs(saved[0])
-			job.Status = "completed"
-			job.FilePath = absPath
-			job.Resolution = deliveredRes
-			job.HasAudio = true
-		}()
+		s.videoQueue <- job
 
 		resultData := map[string]any{
-			"status":   "processing",
+			"status":   "queued",
 			"job_id":   jobID,
 			"prompt":   prompt,
 			"duration": duration,
 			"aspect":   aspect,
-			"message":  fmt.Sprintf("Video generation started in background. Poll get_flow_status(job_id=%q) every 10-15s until completed.", jobID),
+			"message":  fmt.Sprintf("Video job queued (queue depth: %d). Poll get_flow_status(job_id=%q) every 10-15s until completed.", qLen+1, jobID),
 		}
 		jsonBytes, _ := json.MarshalIndent(resultData, "", "  ")
 		return string(jsonBytes), nil
