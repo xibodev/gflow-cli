@@ -23,8 +23,8 @@ const (
 )
 
 var (
-	videoURLRegex = regexp.MustCompile(`https://contribution\.usercontent\.google\.com/download\?[^\s"'\\]+`)
-	imageURLRegex = regexp.MustCompile(`https://lh3\.googleusercontent\.com/gg-dl/[^\s"'\\]+`)
+	videoURLRegex = regexp.MustCompile(`https://contribution\.usercontent\.google\.com/download\?(?:\\+[uU][0-9a-fA-F]{4}|[^\s"'\\])+`)
+	imageURLRegex = regexp.MustCompile(`https://lh3\.googleusercontent\.com/gg-dl/(?:\\+[uU][0-9a-fA-F]{4}|[^\s"'\\])+`)
 )
 
 // GenerationResult represents media or text returned by Gemini.
@@ -225,12 +225,40 @@ func ParseGeminiResponse(raw string) (*GenerationResult, error) {
 			}
 		}
 
+		// Unescape unicode-encoded ampersands and equals before matching URLs
+		unescapedInner := strings.ReplaceAll(innerStr, `\\u0026`, "&")
+		unescapedInner = strings.ReplaceAll(unescapedInner, `\\U0026`, "&")
+		unescapedInner = strings.ReplaceAll(unescapedInner, `\u0026`, "&")
+		unescapedInner = strings.ReplaceAll(unescapedInner, `\U0026`, "&")
+		unescapedInner = strings.ReplaceAll(unescapedInner, `&amp;`, "&")
+		unescapedInner = strings.ReplaceAll(unescapedInner, `\\u003d`, "=")
+		unescapedInner = strings.ReplaceAll(unescapedInner, `\\U003d`, "=")
+		unescapedInner = strings.ReplaceAll(unescapedInner, `\\u003D`, "=")
+		unescapedInner = strings.ReplaceAll(unescapedInner, `\\U003D`, "=")
+		unescapedInner = strings.ReplaceAll(unescapedInner, `\u003d`, "=")
+		unescapedInner = strings.ReplaceAll(unescapedInner, `\U003d`, "=")
+		unescapedInner = strings.ReplaceAll(unescapedInner, `\u003D`, "=")
+		unescapedInner = strings.ReplaceAll(unescapedInner, `\U003D`, "=")
+
 		// Scan for video URLs in this chunk
-		if videoMatches := videoURLRegex.FindAllString(innerStr, -1); len(videoMatches) > 0 {
+		if videoMatches := videoURLRegex.FindAllString(unescapedInner, -1); len(videoMatches) > 0 {
 			for _, u := range videoMatches {
 				// Clean URL encoding escapes
-				cleanURL := strings.ReplaceAll(u, `\u0026`, "&")
+				cleanURL := strings.ReplaceAll(u, `\\u0026`, "&")
+				cleanURL = strings.ReplaceAll(cleanURL, `\\U0026`, "&")
+				cleanURL = strings.ReplaceAll(cleanURL, `\u0026`, "&")
+				cleanURL = strings.ReplaceAll(cleanURL, `\U0026`, "&")
+				cleanURL = strings.ReplaceAll(cleanURL, `&amp;`, "&")
+				cleanURL = strings.ReplaceAll(cleanURL, `\\u003d`, "=")
+				cleanURL = strings.ReplaceAll(cleanURL, `\\U003d`, "=")
+				cleanURL = strings.ReplaceAll(cleanURL, `\\u003D`, "=")
+				cleanURL = strings.ReplaceAll(cleanURL, `\\U003D`, "=")
+				cleanURL = strings.ReplaceAll(cleanURL, `\u003d`, "=")
+				cleanURL = strings.ReplaceAll(cleanURL, `\U003d`, "=")
+				cleanURL = strings.ReplaceAll(cleanURL, `\u003D`, "=")
+				cleanURL = strings.ReplaceAll(cleanURL, `\U003D`, "=")
 				cleanURL = strings.ReplaceAll(cleanURL, `\`, "")
+				cleanURL = strings.TrimRight(cleanURL, `"',]`)
 				if videoURL == "" {
 					videoURL = cleanURL
 				}
@@ -238,10 +266,15 @@ func ParseGeminiResponse(raw string) (*GenerationResult, error) {
 		}
 
 		// Scan for image URLs in this chunk
-		if imgMatches := imageURLRegex.FindAllString(innerStr, -1); len(imgMatches) > 0 {
+		if imgMatches := imageURLRegex.FindAllString(unescapedInner, -1); len(imgMatches) > 0 {
 			for _, u := range imgMatches {
-				cleanURL := strings.ReplaceAll(u, `\u0026`, "&")
+				cleanURL := strings.ReplaceAll(u, `\\u0026`, "&")
+				cleanURL = strings.ReplaceAll(cleanURL, `\\U0026`, "&")
+				cleanURL = strings.ReplaceAll(cleanURL, `\u0026`, "&")
+				cleanURL = strings.ReplaceAll(cleanURL, `\U0026`, "&")
+				cleanURL = strings.ReplaceAll(cleanURL, `&amp;`, "&")
 				cleanURL = strings.ReplaceAll(cleanURL, `\`, "")
+				cleanURL = strings.TrimRight(cleanURL, `"',]`)
 				if !contains(imageURLs, cleanURL) {
 					imageURLs = append(imageURLs, cleanURL)
 				}

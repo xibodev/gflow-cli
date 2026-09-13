@@ -58,12 +58,25 @@ func runGeminiVideo(cmd *cobra.Command, prompt string) error {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()
 
+	cfg := config.LoadConfig()
+	outBase := vidOutput
+	if outBase == "" {
+		outBase = cfg.OutputDir
+	}
+
+	fmt.Fprintf(os.Stderr, "Generating video via Gemini (Veo): %q...\n", prompt)
+	savedPath, err := gemini.GenerateVideoCDP(ctx, prompt, outBase)
+	if err == nil && savedPath != "" {
+		absPath, _ := filepath.Abs(savedPath)
+		fmt.Fprintf(os.Stderr, "Saved: %s\n", absPath)
+		return nil
+	}
+
 	cli, err := gemini.NewClient(ctx, false)
 	if err != nil {
 		return fmt.Errorf("gemini client error: %w", err)
 	}
 
-	fmt.Fprintf(os.Stderr, "Generating video via Gemini (Veo): %q...\n", prompt)
 	res, err := cli.Generate(ctx, "Generate a video of: "+prompt)
 	if err != nil {
 		return err
@@ -76,14 +89,8 @@ func runGeminiVideo(cmd *cobra.Command, prompt string) error {
 		return errors.New("no video URL returned by Gemini")
 	}
 
-	cfg := config.LoadConfig()
-	outBase := vidOutput
-	if outBase == "" {
-		outBase = cfg.OutputDir
-	}
-
 	fmt.Fprintf(os.Stderr, "Downloading generated video...\n")
-	savedPath, err := cli.DownloadMedia(ctx, res.VideoURL, outBase)
+	savedPath, err = cli.DownloadMedia(ctx, res.VideoURL, outBase)
 	if err != nil {
 		return fmt.Errorf("failed downloading video: %w", err)
 	}

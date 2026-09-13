@@ -698,6 +698,18 @@ func (s *Server) generateImages(ctx context.Context, prompt, aspect string, coun
 
 func (s *Server) generateVideo(ctx context.Context, prompt, aspect string, duration int, res, start, end string, seed *int64) ([]models.Asset, string, string, error) {
 	if s.provider == "gemini" {
+		savedPath, err := gemini.GenerateVideoCDP(ctx, prompt, s.outDir())
+		if err == nil && savedPath != "" {
+			asset := models.Asset{
+				ID:        fmt.Sprintf("gemini_vid_%d", time.Now().Unix()),
+				Type:      "video",
+				LocalPath: savedPath,
+				Prompt:    prompt,
+				MimeType:  "video/mp4",
+			}
+			return []models.Asset{asset}, s.outDir(), "720p", nil
+		}
+
 		gc, err := gemini.NewClient(ctx, false)
 		if err != nil {
 			return nil, "", "", err
