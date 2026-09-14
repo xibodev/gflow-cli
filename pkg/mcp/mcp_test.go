@@ -6,11 +6,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/xibodev/gflow-cli/pkg/config"
 	"github.com/xibodev/gflow-cli/pkg/history"
+	"github.com/xibodev/gflow-cli/pkg/models"
 	"github.com/xibodev/gflow-cli/pkg/remote"
 )
 
@@ -130,48 +133,166 @@ func TestHistoryToolUsesInjectedStore(t *testing.T) {
 }
 
 func TestAsyncVideoSubmitAndPoll(t *testing.T) {
-	_, rc := daemonStub(t)
-	s := NewServerRemote(rc, &config.Config{OutputDir: t.TempDir()})
+	const timeout = 5 * time.Second
+	videoPayload := []byte{0, 0, 0, 24, 'f', 't', 'y', 'p', 'i', 's', 'o', 'm'}
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	requestPayload := make(chan models.VideoSubmitRequest, 1)
 
-	// Submit video job
-	out := call(t, s, "tools/call", 10, map[string]any{
-		"name": "generate_flow_video",
-		"arguments": map[string]any{
-			"prompt":   "test scene in city",
-			"duration": 10,
-			"aspect":   "landscape",
-		},
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/videos/generations", func(w http.ResponseWriter, r *http.Request) {
+		var req models.VideoSubmitRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		requestPayload <- req
+		started <- struct{}{}
+		select {
+		case <-release:
+		case <-r.Context().Done():
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"job_id":    "daemon-video-job",
+			"media_ids": []string{"video-1"},
+			"status":    "processing",
+		})
 	})
-	res := out["result"].(map[string]any)
-	text := res["content"].([]any)[0].(map[string]any)["text"].(string)
+	mux.HandleFunc("/v1/videos/generations/daemon-video-job", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"job_id": "daemon-video-job",
+			"status": "succeeded",
+			"assets": []map[string]any{{
+				"id":        "video-1",
+				"type":      "video",
+				"url":       "http://" + r.Host + "/video.mp4",
+				"mime_type": "video/mp4",
+			}},
+		})
+	})
+	mux.HandleFunc("/video.mp4", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "video/mp4")
+		_, _ = w.Write(videoPayload)
+	})
 
-	var submitData map[string]any
-	if err := json.Unmarshal([]byte(text), &submitData); err != nil {
-		t.Fatalf("submit response must be valid JSON: %v, raw: %s", err, text)
+	srv := httptest.NewServer(mux)
+	released := false
+	t.Cleanup(func() {
+		if !released {
+			close(release)
+		}
+		srv.Close()
+	})
+	rc := &remote.Client{
+		BaseURL:     srv.URL,
+		HTTP:        srv.Client(),
+		PollEvery:   time.Millisecond,
+		PollTimeout: timeout,
 	}
-	if submitData["status"] != "queued" && submitData["status"] != "processing" {
-		t.Fatalf("expected status 'queued' or 'processing', got %v", submitData["status"])
+	s := NewServerRemote(rc, &config.Config{OutputDir: t.TempDir()})
+	s.HistoryAdd = func(history.Entry) error { return nil }
+
+	decodeToolData := func(out map[string]any) map[string]any {
+		t.Helper()
+		res := out["result"].(map[string]any)
+		text := res["content"].([]any)[0].(map[string]any)["text"].(string)
+		var data map[string]any
+		if err := json.Unmarshal([]byte(text), &data); err != nil {
+			t.Fatalf("tool response must be valid JSON: %v, raw: %s", err, text)
+		}
+		return data
+	}
+	poll := func(id any, jobID string) map[string]any {
+		t.Helper()
+		return decodeToolData(call(t, s, "tools/call", id, map[string]any{
+			"name":      "get_flow_status",
+			"arguments": map[string]any{"job_id": jobID},
+		}))
+	}
+
+	submitDone := make(chan map[string]any, 1)
+	go func() {
+		submitDone <- call(t, s, "tools/call", 10, map[string]any{
+			"name": "generate_flow_video",
+			"arguments": map[string]any{
+				"prompt":   "test scene in city",
+				"duration": 10,
+				"aspect":   "landscape",
+			},
+		})
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(timeout):
+		t.Fatal("backend did not start video generation")
+	}
+
+	var submitOut map[string]any
+	select {
+	case submitOut = <-submitDone:
+	case <-time.After(timeout):
+		t.Fatal("MCP submission blocked on backend generation")
+	}
+	submitData := decodeToolData(submitOut)
+	if submitData["status"] != "queued" {
+		t.Fatalf("expected queued submission, got %v", submitData["status"])
 	}
 	jobID, ok := submitData["job_id"].(string)
 	if !ok || jobID == "" {
 		t.Fatalf("expected non-empty job_id, got %v", submitData["job_id"])
 	}
 
-	// Poll status
-	pollOut := call(t, s, "tools/call", 11, map[string]any{
-		"name": "get_flow_status",
-		"arguments": map[string]any{
-			"job_id": jobID,
-		},
-	})
-	pollRes := pollOut["result"].(map[string]any)
-	pollText := pollRes["content"].([]any)[0].(map[string]any)["text"].(string)
-
-	var pollData map[string]any
-	if err := json.Unmarshal([]byte(pollText), &pollData); err != nil {
-		t.Fatalf("poll response must be valid JSON: %v, raw: %s", err, pollText)
+	backendRequest := <-requestPayload
+	if backendRequest.Prompt != "test scene in city" || backendRequest.Duration != 10 || backendRequest.Aspect != "landscape" {
+		t.Fatalf("unexpected daemon request payload: %+v", backendRequest)
 	}
-	if pollData["job_id"] != jobID {
-		t.Fatalf("expected polled job_id %s, got %v", jobID, pollData["job_id"])
+
+	processingData := poll(11, jobID)
+	if processingData["status"] != "processing" || processingData["job_id"] != jobID {
+		t.Fatalf("expected processing status for %s, got %v", jobID, processingData)
+	}
+
+	close(release)
+	released = true
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	var terminalData map[string]any
+	for terminalData == nil {
+		select {
+		case <-deadline.C:
+			t.Fatalf("video job %s did not reach terminal state", jobID)
+		default:
+		}
+		data := poll(12, jobID)
+		switch data["status"] {
+		case "queued", "processing":
+		case "completed", "failed":
+			terminalData = data
+		default:
+			t.Fatalf("unexpected video job status: %v", data)
+		}
+	}
+
+	if terminalData["status"] != "completed" {
+		t.Fatalf("video job failed: %v", terminalData)
+	}
+	if terminalData["job_id"] != jobID || terminalData["prompt"] != "test scene in city" || terminalData["duration"] != float64(10) || terminalData["aspect"] != "landscape" {
+		t.Fatalf("unexpected terminal payload: %v", terminalData)
+	}
+	if terminalData["resolution"] != "720p" || terminalData["has_audio"] != true {
+		t.Fatalf("unexpected completed video metadata: %v", terminalData)
+	}
+	filePath, ok := terminalData["file_path"].(string)
+	if !ok || filePath == "" {
+		t.Fatalf("expected completed video file path, got %v", terminalData["file_path"])
+	}
+	savedPayload, err := os.ReadFile(filePath)
+	if err != nil {
+		t.Fatalf("read completed video: %v", err)
+	}
+	if !bytes.Equal(savedPayload, videoPayload) {
+		t.Fatalf("saved video payload = %v, want %v", savedPayload, videoPayload)
 	}
 }
