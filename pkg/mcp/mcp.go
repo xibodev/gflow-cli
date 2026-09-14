@@ -77,7 +77,7 @@ type Server struct {
 	cancel map[string]context.CancelFunc
 	wg     sync.WaitGroup
 
-	jobsMu     sync.RWMutex
+	jobsMu     sync.RWMutex // protects jobs and all VideoJob fields after publication
 	jobs       map[string]*VideoJob
 	videoQueue chan *VideoJob
 
@@ -147,48 +147,62 @@ func (s *Server) startVideoWorker() {
 func (s *Server) runSingleVideoJob(job *VideoJob) {
 	defer func() {
 		if r := recover(); r != nil {
-			s.jobsMu.Lock()
-			job.Status = "failed"
-			job.Error = fmt.Sprintf("worker error: %v", r)
 			now := time.Now()
+			s.jobsMu.Lock()
+			job.Error = fmt.Sprintf("worker error: %v", r)
 			job.CompletedAt = &now
+			job.Status = "failed"
 			s.jobsMu.Unlock()
 		}
 	}()
 
 	s.jobsMu.Lock()
-	job.Status = "processing"
+	prompt := job.Prompt
+	aspect := job.Aspect
+	duration := job.Duration
+	resolution := job.Resolution
+	startImage := job.startImage
+	endImage := job.endImage
+	seed := job.seed
 	now := time.Now()
 	job.StartedAt = &now
+	job.Status = "processing"
 	s.jobsMu.Unlock()
 
 	bgCtx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 
-	assets, outDir, deliveredRes, err := s.generateVideo(bgCtx, job.Prompt, job.Aspect, job.Duration, job.Resolution, job.startImage, job.endImage, job.seed)
-
-	s.jobsMu.Lock()
-	defer s.jobsMu.Unlock()
-	cNow := time.Now()
-	job.CompletedAt = &cNow
+	assets, outDir, deliveredRes, err := s.generateVideo(bgCtx, prompt, aspect, duration, resolution, startImage, endImage, seed)
 
 	if err != nil {
-		job.Status = "failed"
+		completedAt := time.Now()
+		s.jobsMu.Lock()
+		job.CompletedAt = &completedAt
 		job.Error = err.Error()
+		job.Status = "failed"
+		s.jobsMu.Unlock()
 		return
 	}
 
-	saved, _ := s.saveAssets(bgCtx, assets, outDir, "video", job.Prompt, job.Aspect, "")
+	saved, _ := s.saveAssets(bgCtx, assets, outDir, "video", prompt, aspect, "")
 	if len(saved) == 0 {
-		job.Status = "failed"
+		completedAt := time.Now()
+		s.jobsMu.Lock()
+		job.CompletedAt = &completedAt
 		job.Error = "generation produced no downloadable assets"
+		job.Status = "failed"
+		s.jobsMu.Unlock()
 		return
 	}
 	absPath, _ := filepath.Abs(saved[0])
-	job.Status = "completed"
+	completedAt := time.Now()
+	s.jobsMu.Lock()
+	job.CompletedAt = &completedAt
 	job.FilePath = absPath
 	job.Resolution = deliveredRes
 	job.HasAudio = true
+	job.Status = "completed"
+	s.jobsMu.Unlock()
 }
 
 // Run starts the JSON-RPC stdio loop. Stdout carries only JSON-RPC messages.
@@ -385,7 +399,7 @@ func (s *Server) getToolsList() []map[string]any {
 				}, "required": []string{"media_id"}},
 		},
 		{
-			"name": "get_flow_status",
+			"name":        "get_flow_status",
 			"description": "Check AI provider readiness or poll an ongoing video generation job. Pass 'job_id' to check if a video has completed rendering and retrieve its file_path.",
 			"inputSchema": map[string]any{
 				"type": "object",
@@ -473,7 +487,11 @@ func (s *Server) executeTool(ctx context.Context, name string, args map[string]a
 		}
 		if jobID != "" {
 			s.jobsMu.RLock()
-			job, ok := s.jobs[jobID]
+			storedJob, ok := s.jobs[jobID]
+			var job VideoJob
+			if ok {
+				job = *storedJob
+			}
 			s.jobsMu.RUnlock()
 			if !ok {
 				res := map[string]any{
