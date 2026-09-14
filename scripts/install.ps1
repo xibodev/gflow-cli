@@ -85,6 +85,9 @@ Write-Host "  - Gemini (default): Imagen 3 images, Veo video, Lyria music, Flash
 Write-Host "  - MiniMax: H3 video ('gflow video ... -P minimax')." -ForegroundColor Gray
 Write-Host "  - Google Flow: Flow Imagen 4 & Veo 3.1 ('gflow image ... -P flow')." -ForegroundColor Gray
 
-Write-Host "`nMCP for AI Coding Assistants (Cursor / Claude / OpenCode / Windsurf):" -ForegroundColor Cyan
-Write-Host "  Command: gflow" -ForegroundColor Gray
-Write-Host "  Args:    [`"mcp`"]`n" -ForegroundColor Gray
+Write-Host "`nConfiguring Model Context Protocol (MCP) for installed AI tools..." -ForegroundColor Cyan
+try {
+    & "$InstallDir\gflow.exe" mcp setup
+} catch {
+    Write-Host "Auto-configuration skipped: $_" -ForegroundColor Gray
+}

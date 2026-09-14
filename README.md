@@ -190,23 +190,32 @@ TIME         TYPE   ID            PROMPT                                LOCAL PA
 
 ## Model Context Protocol (MCP)
 
-**gflow-cli** includes a native stdio MCP server for AI coding assistants and desktop agents through its `gflow` executable/CLI command:
+**gflow-cli** includes a native stdio MCP server for AI coding assistants and desktop agents.
 
-### Claude Desktop
-Add to your `claude_desktop_config.json`:
+### Automated Setup (Recommended)
+Automatically configure gflow in all installed AI assistants (OpenCode, Claude Desktop, Cursor, Claude Code) with a single command:
+```bash
+gflow mcp setup
+```
+
+### Manual Configuration
+
+#### OpenCode (`~/.config/opencode/opencode.json` or `./opencode.json`)
 ```json
 {
-  "mcpServers": {
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
     "gflow": {
-      "command": "gflow",
-      "args": ["mcp"]
+      "type": "local",
+      "command": ["gflow", "mcp"],
+      "enabled": true
     }
   }
 }
 ```
 
-### Cursor / OpenCode / Cline / Windsurf
-Add to your MCP settings:
+#### Claude Desktop & Cursor
+Add to your `claude_desktop_config.json` or `.cursor/mcp.json`:
 ```json
 {
   "mcpServers": {

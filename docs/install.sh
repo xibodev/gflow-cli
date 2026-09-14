@@ -93,7 +93,6 @@ echo "  • Gemini (default): Imagen 3 images, Veo video, Lyria music, Flash cha
 echo "  • MiniMax: H3 video ('gflow video ... -P minimax')."
 echo "  • Google Flow: Flow Imagen 4 & Veo 3.1 ('gflow image ... -P flow')."
 echo ""
-echo "MCP for AI Coding Assistants (Cursor / Claude / OpenCode / Windsurf):"
-echo "  Command: gflow"
-echo "  Args:    [\"mcp\"]"
+echo "Configuring Model Context Protocol (MCP) for installed AI tools..."
+"$INSTALL_DIR/gflow" mcp setup || true
 echo ""
