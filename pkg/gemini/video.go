@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -15,9 +16,8 @@ import (
 	"github.com/xibodev/gflow-cli/pkg/models"
 )
 
-// GenerateVideoCDP submits a video generation job directly via the authenticated
-// Gemini Desktop / Chrome Web session over CDP on port 9223, polling until completion
-// and saving the downloaded video file to outDir.
+// GenerateVideoCDP submits a video generation job headlessly via Chrome/CDP
+// on port 9223, polling until completion and saving the downloaded video file to outDir.
 func GenerateVideoCDP(ctx context.Context, prompt string, outDir string) (string, error) {
 	if strings.TrimSpace(prompt) == "" {
 		return "", fmt.Errorf("%w: prompt is required", models.ErrValidation)
@@ -25,33 +25,69 @@ func GenerateVideoCDP(ctx context.Context, prompt string, outDir string) (string
 
 	cdpPort := 9223
 	target, err := cdp.FindGeminiTarget(cdpPort)
+	var headlessCmd *exec.Cmd
+	var tempUserDataDir string
+
 	if err != nil {
-		exePath, err := FindGeminiExecutable()
-		if err != nil {
-			return "", fmt.Errorf("gemini executable not found: %w", err)
+		// Launch headless Chromium/Chrome/Edge in the background
+		browserExe := findHeadlessBrowser()
+		if browserExe != "" {
+			tempUserDataDir, _ = os.MkdirTemp("", "gflow-gemini-headless-*")
+			cmd := exec.Command(browserExe,
+				"--headless=new",
+				fmt.Sprintf("--remote-debugging-port=%d", cdpPort),
+				"--user-data-dir="+tempUserDataDir,
+				"--disable-gpu",
+				"--no-first-run",
+				"--no-default-browser-check",
+			)
+			cmd.Stdout = nil
+			cmd.Stderr = nil
+			if err := cmd.Start(); err == nil {
+				headlessCmd = cmd
+			}
 		}
-		cmd := exec.Command(exePath, fmt.Sprintf("--remote-debugging-port=%d", cdpPort))
-		cmd.Stdout = nil
-		cmd.Stderr = nil
-		if err := cmd.Start(); err != nil {
-			return "", fmt.Errorf("failed to launch Gemini background process: %w", err)
+
+		if headlessCmd == nil {
+			// Fallback to desktop app if headless browser is not found
+			exePath, err := FindGeminiExecutable()
+			if err != nil {
+				return "", fmt.Errorf("no browser or Gemini app found: %w", err)
+			}
+			cmd := exec.Command(exePath, fmt.Sprintf("--remote-debugging-port=%d", cdpPort))
+			cmd.Stdout = nil
+			cmd.Stderr = nil
+			if err := cmd.Start(); err != nil {
+				return "", fmt.Errorf("failed to launch Gemini background process: %w", err)
+			}
 		}
+
 		deadline := time.Now().Add(6 * time.Second)
 		for time.Now().Before(deadline) {
 			time.Sleep(300 * time.Millisecond)
-			target, err = cdp.FindGeminiTarget(cdpPort)
+			target, err = cdp.FindTargetByPattern(cdpPort, "")
 			if err == nil && target != nil && target.WebSocketDebuggerURL != "" {
 				break
 			}
 		}
 	}
+
+	defer func() {
+		if headlessCmd != nil && headlessCmd.Process != nil {
+			_ = headlessCmd.Process.Kill()
+		}
+		if tempUserDataDir != "" {
+			_ = os.RemoveAll(tempUserDataDir)
+		}
+	}()
+
 	if target == nil || target.WebSocketDebuggerURL == "" {
-		return "", fmt.Errorf("could not connect to Gemini over CDP on port %d", cdpPort)
+		return "", fmt.Errorf("could not connect to background browser over CDP on port %d", cdpPort)
 	}
 
 	client, err := cdp.Connect(ctx, target.WebSocketDebuggerURL)
 	if err != nil {
-		return "", fmt.Errorf("failed to attach CDP to Gemini: %w", err)
+		return "", fmt.Errorf("failed to attach CDP to background session: %w", err)
 	}
 	defer client.Close()
 
@@ -69,6 +105,24 @@ func GenerateVideoCDP(ctx context.Context, prompt string, outDir string) (string
 		"downloadPath": absOutDir,
 	})
 
+	// Inject session cookies if running via fresh headless browser
+	if headlessCmd != nil {
+		sess, err := LoadSession()
+		if err == nil && sess != nil && len(sess.Cookies) > 0 {
+			var cdpCookies []map[string]any
+			for k, v := range sess.Cookies {
+				cdpCookies = append(cdpCookies, map[string]any{
+					"name":   k,
+					"value":  v,
+					"domain": ".google.com",
+					"path":   "/",
+					"secure": true,
+				})
+			}
+			_, _ = client.CallMethod(ctx, "Network.setCookies", map[string]any{"cookies": cdpCookies})
+		}
+	}
+
 	existingFiles := make(map[string]bool)
 	if entries, err := os.ReadDir(absOutDir); err == nil {
 		for _, e := range entries {
@@ -84,7 +138,9 @@ func GenerateVideoCDP(ctx context.Context, prompt string, outDir string) (string
 	}
 	promptJSON, _ := json.Marshal(reqPrompt)
 
-	_, _ = client.Evaluate(ctx, `window.location.href = "https://gemini.google.com/app"`)
+	_, _ = client.CallMethod(ctx, "Page.navigate", map[string]any{
+		"url": "https://gemini.google.com/app",
+	})
 	time.Sleep(3 * time.Second)
 
 	submitJS := fmt.Sprintf(`
@@ -159,7 +215,7 @@ func GenerateVideoCDP(ctx context.Context, prompt string, outDir string) (string
 		}
 		_ = json.Unmarshal(data, &state)
 
-		if strings.Contains(strings.ToLower(state.Text), "couldn't") || strings.Contains(strings.ToLower(state.Text), "não consegui") {
+		if strings.Contains(strings.ToLower(state.Text), "couldn't") || strings.Contains(strings.ToLower(state.Text), "não consegui") || strings.Contains(strings.ToLower(state.Text), "resets") || strings.Contains(strings.ToLower(state.Text), "limit") {
 			return "", fmt.Errorf("gemini rejected video generation: %s", state.Text)
 		}
 
@@ -200,4 +256,32 @@ func GenerateVideoCDP(ctx context.Context, prompt string, outDir string) (string
 	}
 
 	return "", errors.New("downloaded video file not found in output directory")
+}
+
+func findHeadlessBrowser() string {
+	var candidates []string
+	switch runtime.GOOS {
+	case "windows":
+		candidates = []string{
+			`C:\Program Files\Google\Chrome\Application\chrome.exe`,
+			`C:\Program Files (x86)\Google\Chrome\Application\chrome.exe`,
+			`C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe`,
+		}
+	case "darwin":
+		candidates = []string{
+			"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+			"/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+		}
+	default:
+		candidates = []string{"google-chrome", "google-chrome-stable", "chromium", "chromium-browser"}
+	}
+	for _, c := range candidates {
+		if _, err := os.Stat(c); err == nil {
+			return c
+		}
+		if p, err := exec.LookPath(c); err == nil {
+			return p
+		}
+	}
+	return ""
 }

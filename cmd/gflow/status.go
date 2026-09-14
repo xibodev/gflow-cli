@@ -78,7 +78,7 @@ var statusCmd = &cobra.Command{
 
 func formatBool(val bool, trueStr, falseStr string) string {
 	if val {
-		return "✔ " + trueStr
+		return "[OK] " + trueStr
 	}
-	return "✖ " + falseStr
+	return "[--] " + falseStr
 }

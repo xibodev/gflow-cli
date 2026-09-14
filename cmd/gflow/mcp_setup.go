@@ -64,9 +64,9 @@ func RunMCPSetup() error {
 		cfgDir := filepath.Dir(cfgPath)
 		if dirExists(cfgDir) || mcpSetupForce || fileExists(cfgPath) {
 			if err := configureOpenCode(cfgPath, exe); err != nil {
-				fmt.Printf("  ✖ OpenCode: %v\n", err)
+				fmt.Printf("  [FAIL] OpenCode: %v\n", err)
 			} else {
-				fmt.Printf("  ✔ OpenCode: configured in %s\n", cfgPath)
+				fmt.Printf("  [OK] OpenCode: configured in %s\n", cfgPath)
 				configuredCount++
 			}
 		}
@@ -91,9 +91,9 @@ func RunMCPSetup() error {
 			claudeDir := filepath.Dir(claudeConfigPath)
 			if dirExists(claudeDir) || mcpSetupForce || fileExists(claudeConfigPath) {
 				if err := configureStandardMCPServers(claudeConfigPath, exe); err != nil {
-					fmt.Printf("  ✖ Claude Desktop: %v\n", err)
+					fmt.Printf("  [FAIL] Claude Desktop: %v\n", err)
 				} else {
-					fmt.Printf("  ✔ Claude Desktop: configured in %s\n", claudeConfigPath)
+					fmt.Printf("  [OK] Claude Desktop: configured in %s\n", claudeConfigPath)
 					configuredCount++
 				}
 			}
@@ -106,9 +106,9 @@ func RunMCPSetup() error {
 		cursorDir := filepath.Dir(cursorPath)
 		if dirExists(cursorDir) || mcpSetupForce || fileExists(cursorPath) {
 			if err := configureStandardMCPServers(cursorPath, exe); err != nil {
-				fmt.Printf("  ✖ Cursor: %v\n", err)
+				fmt.Printf("  [FAIL] Cursor: %v\n", err)
 			} else {
-				fmt.Printf("  ✔ Cursor: configured in %s\n", cursorPath)
+				fmt.Printf("  [OK] Cursor: configured in %s\n", cursorPath)
 				configuredCount++
 			}
 		}
@@ -119,9 +119,9 @@ func RunMCPSetup() error {
 		if claudeBin, err := exec.LookPath("claude"); err == nil && claudeBin != "" {
 			cmd := exec.Command(claudeBin, "mcp", "add", "-s", "user", "gflow", "--", exe, "mcp")
 			if out, err := cmd.CombinedOutput(); err != nil {
-				fmt.Printf("  ✖ Claude Code CLI: %v (%s)\n", err, string(out))
+				fmt.Printf("  [FAIL] Claude Code CLI: %v (%s)\n", err, string(out))
 			} else {
-				fmt.Printf("  ✔ Claude Code CLI: registered user-level MCP server\n")
+				fmt.Printf("  [OK] Claude Code CLI: registered user-level MCP server\n")
 				configuredCount++
 			}
 		}
@@ -137,7 +137,7 @@ func RunMCPSetup() error {
 		if dirExists(filepath.Dir(filepath.Dir(sp))) || mcpSetupForce {
 			if err := os.MkdirAll(filepath.Dir(sp), 0755); err == nil {
 				if err := os.WriteFile(sp, []byte(skillContent), 0644); err == nil {
-					fmt.Printf("  ✔ AI Skill: installed in %s\n", sp)
+					fmt.Printf("  [OK] AI Skill: installed in %s\n", sp)
 					configuredCount++
 				}
 			}

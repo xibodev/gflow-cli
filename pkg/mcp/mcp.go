@@ -367,16 +367,17 @@ func (s *Server) getToolsList() []map[string]any {
 		},
 		{
 			"name": "generate_flow_video",
-			"description": "Start AI video generation with native synchronous audio (dialogue, voiceover, SFX, ambience) using Veo 3.1.\n\n" +
+			"description": "Start AI video generation with native synchronous audio using Google Veo 3.1.\n\n" +
+				"SUPPORTED MODALITIES:\n" +
+				"1. Single-Shot: Text-to-video clip (4s, 6s, 8s, 10s) with cinematic motion.\n" +
+				"2. Timestamp Continuation: Multi-scene cuts within one clip using '[00:00-00:04] Wide shot of... [00:04-00:08] Close-up of...'.\n" +
+				"3. Image-to-Video: Animate starting from a reference image via 'start_image'.\n\n" +
+				"AUDIO & SPEECH DIRECTION:\n" +
+				"• Spoken Dialogue: Colon before quotes ('Person says: \"Hello\"') prevents subtitles.\n" +
+				"• Vocal Tone & Language: 'Audio: A mature female narrator speaks in Brazilian Portuguese, saying: \"...\"'.\n" +
+				"• Sound Design: Layer 'SFX: ...' and 'Ambient noise: ...'. Always append '(no subtitles, no text overlays)'.\n\n" +
 				"NON-BLOCKING WORKFLOW:\n" +
-				"Returns immediately with a 'job_id' (in <1s) to prevent client socket timeouts. Poll 'get_flow_status(job_id=...)' every 10-15s until 'status' is 'completed', which returns the final 'file_path'. Multiple video jobs can be started in parallel.\n\n" +
-				"PROMPTING TIPS FOR AGENTS:\n" +
-				"• Multi-Scene Cuts: Use timestamp prefixes to cut scenes within a clip: '[00:00-00:04] Wide shot of... [00:04-00:08] Close-up of...'.\n" +
-				"• Dialogue & Lip-Sync: Use colon syntax to speak and avoid burnt-in subtitles: 'Character looks at camera and says: \"Hello world\"'.\n" +
-				"• Voice & Language: Specify narrator gender, language, and tone: 'Audio: A female French narrator speaks calmly in French, saying: \"...\"'.\n" +
-				"• Foley & Ambience: Layer background sounds: 'SFX: gentle rain, crackling fireplace. Audio: no background music'.\n" +
-				"• Subtitle Prevention: Always append '(no subtitles, no text overlays)' at the end.\n" +
-				"• Multi-Clip Assembly: For long videos (>10s), generate sequential continuation clips that an agent can concatenate via ffmpeg.",
+				"Returns immediately with a 'job_id' (<1s). Check 'get_flow_status(job_id=...)' every 10-15s until 'status' is 'completed' to get the final 'file_path'.",
 			"inputSchema": map[string]any{"type": "object",
 				"properties": map[string]any{
 					"prompt":      map[string]any{"type": "string", "description": "Scene, camera motion, and audio prompt (dialogue, SFX, voiceover, language)."},
@@ -400,7 +401,7 @@ func (s *Server) getToolsList() []map[string]any {
 		},
 		{
 			"name":        "get_flow_status",
-			"description": "Check AI provider readiness or poll an ongoing video generation job. Pass 'job_id' to check if a video has completed rendering and retrieve its file_path.",
+			"description": "Check AI provider readiness, video generation quota availability, and poll active video jobs. Call without arguments to inspect account readiness, or pass 'job_id' to check job progress and retrieve the final video file_path.",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -526,8 +527,21 @@ func (s *Server) executeTool(ctx context.Context, name string, args map[string]a
 				res["has_audio"] = job.HasAudio
 				res["message"] = "Video generation completed successfully."
 			} else if job.Status == "failed" {
-				res["error"] = job.Error
-				res["message"] = "Video generation failed."
+				errLower := strings.ToLower(job.Error)
+				if strings.Contains(errLower, "limit") || strings.Contains(errLower, "quota") || strings.Contains(errLower, "resets") || strings.Contains(errLower, "insufficient") {
+					res["error_code"] = "QUOTA_EXHAUSTED"
+					res["reason"] = "Account video generation rate limit reached on upstream Google Gemini (Veo 3.1)."
+					res["action_required"] = "Wait for your rolling account quota to reset (typically 1 hour)."
+					res["agent_instruction"] = "DO NOT launch browsers, DO NOT kill processes, and DO NOT retry until quota resets. Report to user that account video generation limit is reached."
+				} else if strings.Contains(errLower, "auth") || strings.Contains(errLower, "unauthenticated") {
+					res["error_code"] = "AUTH_REQUIRED"
+					res["reason"] = "Session authentication is expired or missing."
+					res["action_required"] = "Run 'gflow status' or log in to Gemini to refresh local session."
+					res["agent_instruction"] = "Ask the operator to log in once. Do not attempt automated browser logins."
+				} else {
+					res["error"] = job.Error
+					res["message"] = "Video generation failed."
+				}
 			}
 			b, _ := json.MarshalIndent(res, "", "  ")
 			return string(b), nil
@@ -535,16 +549,34 @@ func (s *Server) executeTool(ctx context.Context, name string, args map[string]a
 
 		if s.provider == "gemini" {
 			sess, err := gemini.LoadSession()
-			exe, exeErr := gemini.FindGeminiExecutable()
 			status := "ready"
-			updatedStr := "never"
 			if err != nil || sess == nil || sess.At == "" {
 				status = "unauthenticated"
-			} else {
-				updatedStr = sess.UpdatedAt.Format(time.RFC3339)
 			}
-			return fmt.Sprintf("Provider: Gemini (Extension-Free)\nApp Installed: %v (%s)\nSession Status: %s\nUpdated: %s",
-				exeErr == nil, exe, status, updatedStr), nil
+			s.jobsMu.RLock()
+			activeJobs := 0
+			for _, j := range s.jobs {
+				if j.Status == "queued" || j.Status == "processing" {
+					activeJobs++
+				}
+			}
+			s.jobsMu.RUnlock()
+
+			res := map[string]any{
+				"provider":           "gemini",
+				"session_status":     status,
+				"can_generate_video": status == "ready",
+				"active_jobs_count":  activeJobs,
+				"supported_modalities": []string{
+					"single_shot (4s, 6s, 8s, 10s text-to-video with synchronized audio)",
+					"timestamp_continuation ([00:00-00:04]...[00:04-00:08] multi-scene cuts in one clip)",
+					"image_to_video (start_image, reference_image)",
+					"upsample (1080p, 4k)",
+				},
+				"agent_guidance": "Check this status before video operations. Call generate_flow_video to queue jobs non-blockingly, then poll get_flow_status(job_id=...) every 10-15s until completed.",
+			}
+			b, _ := json.MarshalIndent(res, "", "  ")
+			return string(b), nil
 		}
 		if s.remote != nil {
 			st, err := s.remote.DetailedStatus(ctx)
