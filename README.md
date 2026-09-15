@@ -97,14 +97,14 @@ gflow status
 === AI Providers Status ===
 
 [Gemini] (Default: Imagen 3, Veo, Audio, Chat)
-  App Installed:    ✔ Found
-  Session State:    ✔ Ready
+  App Installed:    [OK] Found (C:\Users\...\Gemini.exe)
+  Session State:    [OK] Ready
 
 [MiniMax Design] (Direct Cloud: H3 Video)
-  Session State:    ✔ Ready
+  Session State:    [OK] Ready (Captured from Desktop app)
 
 [Google Flow] (Direct CDP / Daemon)
-  Daemon Running:   ✖ Stopped
+  Daemon Running:   [--] Stopped
 ```
 
 ---
@@ -112,9 +112,9 @@ gflow status
 ## Provider Selection
 
 Select your backend via `--provider` (`-P`) or `export GFLOW_PROVIDER=gemini`:
-- `gemini` (**default**): Pure HTTPS requests powered by your local Gemini Desktop session. Generates Imagen 3 images, Veo video, Lyria audio, and terminal chat.
+- `gemini` (**default**): Pure HTTPS and headless background CDP execution (port 9223) powered by your local Gemini session. Generates Imagen 3 images, Veo video with synchronized audio and multi-scene timestamp cuts (`[00:00-00:05] ... [00:05-00:10] ...`), Lyria audio, and terminal chat with zero desktop popups or window stealing.
 - `minimax`: Direct cloud generation to MiniMax H3 using your desktop app credentials.
-- `flow`: Google Flow backend (Imagen 4 and Veo 3.1) via direct CDP or local daemon.
+- `flow`: Google Flow backend (Imagen 4 and Veo 3.1) via direct CDP or local daemon with native 4K upsampling and canvas extension.
 
 ---
 
@@ -227,14 +227,11 @@ Add to your `claude_desktop_config.json` or `.cursor/mcp.json`:
 }
 ```
 
-**Available MCP Tools** (served over stdio by `gflow mcp`, backed by the same
-local daemon as the CLI):
-- `generate_flow_image`: Prompt, aspect, model, count, `reference_image`
-  (file path or media ID), and `seed`.
-- `generate_flow_video`: Prompt, duration, aspect, `resolution` (720p native;
-  1080p/4k trigger the upsample step), `start_image`/`end_image`, `seed`.
-- `upsample_flow_video`: Upsample video to 1080p/4K.
-- `get_flow_status`: Check daemon, extension, and token readiness.
+**Available MCP Tools** (served over stdio by `gflow mcp`):
+- `generate_flow_image`: Prompt, aspect, model, count, `reference_image` (file path or media ID), and `seed`.
+- `generate_flow_video`: Non-blocking async submission. Returns `{"status": "queued", "job_id": "..."}` in `<1s`. Video jobs are processed FIFO by a background worker to avoid rate limit spikes. Supports single-shot, multi-scene timestamp continuation (`[00:00-00:05]...[00:05-00:10]...`), and image-to-video.
+- `get_flow_status`: Inspect overall provider readiness and quota telemetry, or poll a specific `job_id` for completion. Returns prescriptive error codes (`QUOTA_EXHAUSTED`, `AUTH_REQUIRED`) with explicit recovery instructions.
+- `upsample_flow_video`: Upsample finished video to 1080p/4K.
 - `get_flow_history`: Retrieve recent generation records.
 
 ---
